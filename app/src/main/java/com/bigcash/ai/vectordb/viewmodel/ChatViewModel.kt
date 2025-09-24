@@ -137,14 +137,42 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun buildDocumentData(searchResults: List<Pair<PdfEntity, Float>>): String {
         return searchResults.joinToString("\n\n") { (pdf, score) ->
+            val hasOriginalFile = pdf.localFilePath.isNotEmpty()
+            val fileInfo = if (hasOriginalFile) {
+                "Original file available: Yes (${pdf.localFilePath.substringAfterLast("/")})"
+            } else {
+                "Original file available: No"
+            }
+            
             """
             Document: ${pdf.name}
             Relevance Score: ${(score * 100).toInt()}%
             File Content: ${pdf.data}
             Description: ${pdf.description}
             Upload Date: ${pdf.uploadDate}
+            $fileInfo
             """.trimIndent()
         }
+    }
+    
+    /**
+     * Get the original file for a PDF entity.
+     * 
+     * @param pdfEntity The PDF entity
+     * @return The original file if it exists, null otherwise
+     */
+    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
+        return pdfRepository.getOriginalFile(pdfEntity)
+    }
+    
+    /**
+     * Check if the original file exists for a PDF entity.
+     * 
+     * @param pdfEntity The PDF entity
+     * @return True if the original file exists, false otherwise
+     */
+    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
+        return pdfRepository.hasOriginalFile(pdfEntity)
     }
     
     /**

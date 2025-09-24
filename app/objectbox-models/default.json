@@ -5,7 +5,7 @@
   "entities": [
     {
       "id": "1:8958787239341533618",
-      "lastPropertyId": "7:438851156081584088",
+      "lastPropertyId": "8:1081317191875249517",
       "name": "PdfEntity",
       "properties": [
         {
@@ -46,6 +46,11 @@
         {
           "id": "7:438851156081584088",
           "name": "description",
+          "type": 9
+        },
+        {
+          "id": "8:1081317191875249517",
+          "name": "localFilePath",
           "type": 9
         }
       ],

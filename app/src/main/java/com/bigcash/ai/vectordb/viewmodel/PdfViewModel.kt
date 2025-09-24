@@ -156,6 +156,36 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getPdfById(id: Long): PdfEntity? {
         return repository.getPdfById(id)
     }
+    
+    /**
+     * Get the original file from local storage.
+     *
+     * @param pdfEntity The PDF entity containing the local file path
+     * @return The original file if it exists, null otherwise
+     */
+    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
+        return repository.getOriginalFile(pdfEntity)
+    }
+    
+    /**
+     * Check if the original file exists in local storage.
+     *
+     * @param pdfEntity The PDF entity containing the local file path
+     * @return True if the file exists, false otherwise
+     */
+    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
+        return repository.hasOriginalFile(pdfEntity)
+    }
+    
+    /**
+     * Get the size of the original file in local storage.
+     *
+     * @param pdfEntity The PDF entity containing the local file path
+     * @return The file size in bytes, or -1 if the file doesn't exist
+     */
+    fun getOriginalFileSize(pdfEntity: PdfEntity): Long {
+        return repository.getOriginalFileSize(pdfEntity)
+    }
 
     
     /**

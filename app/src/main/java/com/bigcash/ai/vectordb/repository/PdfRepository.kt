@@ -7,6 +7,7 @@ import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.data.PdfEntity_
 import com.bigcash.ai.vectordb.service.EmbeddingServiceFactory
 import com.bigcash.ai.vectordb.service.PdfTextExtractor
+import com.bigcash.ai.vectordb.utils.FileStorageManager
 import io.objectbox.Box
 import io.objectbox.query.QueryBuilder
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,7 @@ class PdfRepository(private val context: Context) {
     private val pdfBox: Box<PdfEntity> = ObjectBox.get().boxFor(PdfEntity::class.java)
     private val pdfTextExtractor = PdfTextExtractor(context)
     private val embeddingService = EmbeddingServiceFactory.getDefaultEmbeddingService(context)
+    private val fileStorageManager = FileStorageManager(context)
     
     /**
      * Save a PDF entity to the database.
@@ -58,13 +60,34 @@ class PdfRepository(private val context: Context) {
     }
     
     /**
-     * Delete a PDF from the database.
+     * Delete a PDF from the database and local storage.
      *
      * @param id The ID of the PDF to delete
      * @return True if the PDF was deleted, false if not found
      */
     suspend fun deletePdf(id: Long): Boolean = withContext(Dispatchers.IO) {
-        pdfBox.remove(id)
+        try {
+            // Get the PDF entity first to get the local file path
+            val pdfEntity = pdfBox.get(id)
+            if (pdfEntity != null) {
+                // Delete the local file if it exists
+                if (pdfEntity.localFilePath.isNotEmpty()) {
+                    val fileDeleted = fileStorageManager.deleteFile(pdfEntity.localFilePath)
+                    Log.d(TAG, "Local file deletion result: $fileDeleted for path: ${pdfEntity.localFilePath}")
+                }
+                
+                // Delete from database
+                pdfBox.remove(id)
+                Log.d(TAG, "PDF deleted from database: $id")
+                true
+            } else {
+                Log.w(TAG, "PDF not found for deletion: $id")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting PDF: $id", e)
+            false
+        }
     }
     
     /**
@@ -159,6 +182,15 @@ class PdfRepository(private val context: Context) {
         Log.d(TAG, "📄 Repository: Processing PDF: $name (${data.size} bytes)")
         
         try {
+            // Save the original file to local storage
+            Log.d(TAG, "💾 Repository: Saving file to local storage")
+            val localFilePath = fileStorageManager.saveFile(name, data)
+            if (localFilePath == null) {
+                Log.e(TAG, "❌ Repository: Failed to save file to local storage")
+                return@withContext null
+            }
+            Log.d(TAG, "✅ Repository: File saved to local storage: $localFilePath")
+            
             // Extract text from PDF using ML Kit
             Log.d(TAG, "📖 Repository: Extracting text from file using ML Kit")
             val extractedText = extractTextFromPdf(name, data)
@@ -186,12 +218,14 @@ class PdfRepository(private val context: Context) {
                 data = extractedText,
                 embedding = embedding,
                 fileSize = data.size.toLong(),
-                description = description.ifEmpty { "Extracted text: ${extractedText.take(100)}..." }
+                description = description.ifEmpty { "Extracted text: ${extractedText.take(100)}..." },
+                localFilePath = localFilePath
             )
             
             Log.d(TAG, "✅ Repository: PDF entity created successfully")
             Log.d(TAG, "📊 Repository: Entity embedding dimension: ${embedding.size}")
             Log.d(TAG, "📊 Repository: Entity embedding magnitude: ${kotlin.math.sqrt(embedding.sumOf { (it * it).toDouble() }.toFloat())}")
+            Log.d(TAG, "📁 Repository: Local file path: $localFilePath")
             
             return@withContext pdfEntity
         } catch (e: Exception) {
@@ -283,11 +317,55 @@ class PdfRepository(private val context: Context) {
     }
     
     /**
+     * Get the original file from local storage.
+     *
+     * @param pdfEntity The PDF entity containing the local file path
+     * @return The original file if it exists, null otherwise
+     */
+    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
+        return if (pdfEntity.localFilePath.isNotEmpty()) {
+            fileStorageManager.getFile(pdfEntity.localFilePath)
+        } else {
+            Log.w(TAG, "No local file path found for PDF: ${pdfEntity.name}")
+            null
+        }
+    }
+    
+    /**
+     * Check if the original file exists in local storage.
+     *
+     * @param pdfEntity The PDF entity containing the local file path
+     * @return True if the file exists, false otherwise
+     */
+    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
+        return if (pdfEntity.localFilePath.isNotEmpty()) {
+            fileStorageManager.fileExists(pdfEntity.localFilePath)
+        } else {
+            false
+        }
+    }
+    
+    /**
+     * Get the size of the original file in local storage.
+     *
+     * @param pdfEntity The PDF entity containing the local file path
+     * @return The file size in bytes, or -1 if the file doesn't exist
+     */
+    fun getOriginalFileSize(pdfEntity: PdfEntity): Long {
+        return if (pdfEntity.localFilePath.isNotEmpty()) {
+            fileStorageManager.getFileSize(pdfEntity.localFilePath)
+        } else {
+            -1
+        }
+    }
+    
+    /**
      * Clean up resources.
      */
     fun cleanup() {
         Log.d(TAG, "🧹 Repository: Cleaning up all resources")
         // Note: EmbeddingServiceFactory services don't require cleanup
         pdfTextExtractor.cleanup()
+        // FileStorageManager doesn't require cleanup as it uses lazy initialization
     }
 }

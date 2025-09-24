@@ -48,7 +48,12 @@ data class PdfEntity(
     /**
      * Optional description or tags for the PDF
      */
-    var description: String = ""
+    var description: String = "",
+    
+    /**
+     * Local file path where the original file is stored
+     */
+    var localFilePath: String = ""
 ) {
     /**
      * Override equals and hashCode to properly handle ByteArray and FloatArray comparisons
@@ -66,6 +71,7 @@ data class PdfEntity(
         if (fileSize != other.fileSize) return false
         if (uploadDate != other.uploadDate) return false
         if (description != other.description) return false
+        if (localFilePath != other.localFilePath) return false
 
         return true
     }
@@ -78,6 +84,7 @@ data class PdfEntity(
         result = 31 * result + fileSize.hashCode()
         result = 31 * result + uploadDate.hashCode()
         result = 31 * result + description.hashCode()
+        result = 31 * result + localFilePath.hashCode()
         return result
     }
 }

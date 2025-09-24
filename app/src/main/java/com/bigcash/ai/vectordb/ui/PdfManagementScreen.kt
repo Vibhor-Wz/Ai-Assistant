@@ -1,6 +1,5 @@
 package com.bigcash.ai.vectordb.ui
 
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -11,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +25,11 @@ import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.viewmodel.PdfViewModel
 import kotlinx.coroutines.launch
 import java.io.InputStream
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material.icons.filled.Build
+import androidx.core.content.FileProvider
+import java.io.File
 
 /**
  * Main screen for PDF management functionality.
@@ -247,6 +250,12 @@ fun PdfManagementScreen(
                     PdfListItem(
                         pdf = pdf,
                         onDelete = { viewModel.deletePdf(pdf.id) },
+                        onViewOriginal = { 
+                            val originalFile = viewModel.getOriginalFile(pdf)
+                            originalFile?.let { file ->
+                                openFileWithExternalApp(context, file)
+                            }
+                        },
                         isLoading = isLoading
                     )
                 }
@@ -343,6 +352,7 @@ fun UploadDialog(
 fun PdfListItem(
     pdf: PdfEntity,
     onDelete: () -> Unit,
+    onViewOriginal: () -> Unit,
     isLoading: Boolean
 ) {
     Card(
@@ -388,17 +398,39 @@ fun PdfListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
                 )
+                
+                if (pdf.localFilePath.isNotEmpty()) {
+                    Text(
+                        text = "Local file: ${pdf.localFilePath.substringAfterLast("/")}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
 
-            IconButton(
-                onClick = onDelete,
-                enabled = !isLoading
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete PDF",
-                    tint = MaterialTheme.colorScheme.error
-                )
+            Row {
+                IconButton(
+                    onClick = onViewOriginal,
+                    enabled = !isLoading && pdf.localFilePath.isNotEmpty()
+                ) {
+                    Icon(
+                        Icons.Filled.Build,
+                        contentDescription = "View Original File",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                
+                IconButton(
+                    onClick = onDelete,
+                    enabled = !isLoading
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete PDF",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
@@ -413,5 +445,54 @@ private fun formatFileSize(bytes: Long): String {
         bytes < 1024 * 1024 -> "${bytes / 1024} KB"
         bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
         else -> "${bytes / (1024 * 1024 * 1024)} GB"
+    }
+}
+
+/**
+ * Open a file with an external app using FileProvider.
+ */
+private fun openFileWithExternalApp(context: android.content.Context, file: File) {
+    try {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, getMimeType(file.extension))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+        } else {
+            // Fallback: try to open with any app that can handle the file
+            val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "*/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(fallbackIntent)
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("PdfManagementScreen", "Error opening file: ${file.name}", e)
+    }
+}
+
+/**
+ * Get MIME type based on file extension.
+ */
+private fun getMimeType(extension: String): String {
+    return when (extension.lowercase()) {
+        "pdf" -> "application/pdf"
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "txt" -> "text/plain"
+        "doc" -> "application/msword"
+        "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "xls" -> "application/vnd.ms-excel"
+        "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else -> "*/*"
     }
 }
