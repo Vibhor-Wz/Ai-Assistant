@@ -3,8 +3,8 @@ package com.bigcash.ai.vectordb.repository
 import android.content.Context
 import android.util.Log
 import com.bigcash.ai.vectordb.data.ObjectBox
-import com.bigcash.ai.vectordb.data.PdfEntity
-import com.bigcash.ai.vectordb.data.PdfEntity_
+import com.bigcash.ai.vectordb.data.PdfEntity2
+import com.bigcash.ai.vectordb.data.PdfEntity2_
 import com.bigcash.ai.vectordb.service.EmbeddingServiceFactory
 import com.bigcash.ai.vectordb.service.PdfTextExtractor
 import com.bigcash.ai.vectordb.utils.FileStorageManager
@@ -25,7 +25,7 @@ class PdfRepository(private val context: Context) {
         private const val TAG = "VECTOR_DEBUG" // Single tag for filtering all vector-related logs
     }
     
-    private val pdfBox: Box<PdfEntity> = ObjectBox.get().boxFor(PdfEntity::class.java)
+    private val pdfBox: Box<PdfEntity2> = ObjectBox.get().boxFor(PdfEntity2::class.java)
     private val pdfTextExtractor = PdfTextExtractor(context)
     private val embeddingService = EmbeddingServiceFactory.getDefaultEmbeddingService(context)
     private val fileStorageManager = FileStorageManager(context)
@@ -36,7 +36,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity to save
      * @return The ID of the saved entity
      */
-    suspend fun savePdf(pdfEntity: PdfEntity): Long = withContext(Dispatchers.IO) {
+    suspend fun savePdf(pdfEntity: PdfEntity2): Long = withContext(Dispatchers.IO) {
         pdfBox.put(pdfEntity)
     }
     
@@ -45,7 +45,7 @@ class PdfRepository(private val context: Context) {
      *
      * @return List of all PDF entities
      */
-    suspend fun getAllPdfs(): List<PdfEntity> = withContext(Dispatchers.IO) {
+    suspend fun getAllPdfs(): List<PdfEntity2> = withContext(Dispatchers.IO) {
         pdfBox.all
     }
     
@@ -55,7 +55,7 @@ class PdfRepository(private val context: Context) {
      * @param id The ID of the PDF to retrieve
      * @return The PDF entity or null if not found
      */
-    suspend fun getPdfById(id: Long): PdfEntity? = withContext(Dispatchers.IO) {
+    suspend fun getPdfById(id: Long): PdfEntity2? = withContext(Dispatchers.IO) {
         pdfBox.get(id)
     }
     
@@ -96,9 +96,9 @@ class PdfRepository(private val context: Context) {
      * @param name The name or part of the name to search for
      * @return List of PDF entities matching the search criteria
      */
-    suspend fun searchPdfsByName(name: String): List<PdfEntity> = withContext(Dispatchers.IO) {
+    suspend fun searchPdfsByName(name: String): List<PdfEntity2> = withContext(Dispatchers.IO) {
         val q = pdfBox.query()
-            .contains(PdfEntity_.name, name, QueryBuilder.StringOrder.CASE_INSENSITIVE)
+            .contains(PdfEntity2_.name, name, QueryBuilder.StringOrder.CASE_INSENSITIVE)
             .build()
         val find = q.find()
         q.close()
@@ -175,9 +175,9 @@ class PdfRepository(private val context: Context) {
      * @param name The name of the PDF
      * @param data The PDF file data as ByteArray
      * @param description Optional description
-     * @return PdfEntity with extracted text and generated embedding
+     * @return PdfEntity2 with extracted text and generated embedding
      */
-    suspend fun createPdfEntity(name: String, data: ByteArray, description: String = ""): PdfEntity ?  = withContext(Dispatchers.IO) {
+    suspend fun createPdfEntity(name: String, data: ByteArray, description: String = ""): PdfEntity2 ?  = withContext(Dispatchers.IO) {
         Log.d(TAG, "🚀 Repository: Starting PDF entity creation")
         Log.d(TAG, "📄 Repository: Processing PDF: $name (${data.size} bytes)")
         
@@ -213,7 +213,7 @@ class PdfRepository(private val context: Context) {
                 generateMockEmbedding()
             }
             
-            val pdfEntity = PdfEntity(
+            val pdfEntity = PdfEntity2(
                 name = name,
                 data = extractedText,
                 embedding = embedding,
@@ -243,11 +243,189 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity to update
      * @return The updated PDF entity ID
      */
-    suspend fun updatePdf(pdfEntity: PdfEntity): Long = withContext(Dispatchers.IO) {
+    suspend fun updatePdf(pdfEntity: PdfEntity2): Long = withContext(Dispatchers.IO) {
         pdfBox.put(pdfEntity)
     }
 
     
+    /**
+     * Perform intelligent search that tries name matching first, then falls back to vector search.
+     * This method is designed to return more precise results for specific document requests.
+     *
+     * @param queryText The user's natural language query
+     * @param topK Number of top results to return (default: 3)
+     * @return List of most relevant PDFs with similarity scores
+     */
+    suspend fun intelligentSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🔍 Repository: Starting intelligent search")
+        Log.d(TAG, "📝 Repository: Query: '$queryText'")
+        Log.d(TAG, "📊 Repository: Top K: $topK")
+        
+        try {
+            // Check if this is a specific document request
+            val isSpecificRequest = isSpecificDocumentRequest(queryText)
+            Log.d(TAG, "📊 Repository: Is specific document request: $isSpecificRequest")
+            
+            // First, try to find documents by name matching
+            val nameMatchResults = tryNameBasedSearch(queryText)
+            if (nameMatchResults.isNotEmpty()) {
+                Log.d(TAG, "✅ Repository: Found ${nameMatchResults.size} documents by name matching")
+                
+                // If it's a specific request, return only the best match
+                if (isSpecificRequest && nameMatchResults.isNotEmpty()) {
+                    val bestMatch = nameMatchResults.take(1)
+                    Log.d(TAG, "🎯 Repository: Specific request - returning only best match: ${bestMatch.first().first.name}")
+                    return@withContext bestMatch
+                }
+                
+                return@withContext nameMatchResults
+            }
+            
+            // If no name matches, fall back to vector search
+            Log.d(TAG, "🔄 Repository: No name matches found, falling back to vector search")
+            val vectorResults = vectorSearch(queryText, topK)
+            
+            // If it's a specific request and we have vector results, return only the best match
+            if (isSpecificRequest && vectorResults.isNotEmpty()) {
+                val bestMatch = vectorResults.take(1)
+                Log.d(TAG, "🎯 Repository: Specific request - returning only best vector match: ${bestMatch.first().first.name}")
+                return@withContext bestMatch
+            }
+            
+            return@withContext vectorResults
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Repository: Error in intelligent search", e)
+            return@withContext emptyList()
+        }
+    }
+    
+    /**
+     * Check if the query is asking for a specific document.
+     * This helps determine whether to return only the best match or multiple results.
+     */
+    private fun isSpecificDocumentRequest(query: String): Boolean {
+        val specificRequestPatterns = listOf(
+            "give me my",
+            "show me my",
+            "find my",
+            "where is my",
+            "get my",
+            "i need my",
+            "can you show",
+            "can you give",
+            "can you find",
+            "show me the",
+            "give me the",
+            "find the",
+            "where is the",
+            "get the",
+            "i need the"
+        )
+        
+        val queryLower = query.lowercase()
+        return specificRequestPatterns.any { pattern -> queryLower.contains(pattern) }
+    }
+    
+    /**
+     * Try to find documents by analyzing the query for document names or types.
+     * This method looks for specific document types and names in the query.
+     *
+     * @param queryText The user's query
+     * @return List of matching documents with high similarity scores
+     */
+    private suspend fun tryNameBasedSearch(queryText: String): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🔍 Repository: Trying name-based search for: '$queryText'")
+        
+        val query = queryText.lowercase().trim()
+        val results = mutableListOf<Pair<PdfEntity2, Float>>()
+        
+        // Get all PDFs for analysis
+        val allPdfs = pdfBox.all
+        Log.d(TAG, "📊 Repository: Analyzing ${allPdfs.size} documents for name matches")
+        
+        for (pdf in allPdfs) {
+            val pdfName = pdf.name.lowercase()
+            var similarity = 0.0f
+            
+            // Check for exact name matches
+            if (pdfName.contains(query) || query.contains(pdfName)) {
+                similarity = 1.0f
+                Log.d(TAG, "✅ Repository: Exact name match found: ${pdf.name}")
+            }
+            // Check for document type matches
+            else if (isDocumentTypeMatch(query, pdfName)) {
+                similarity = 0.9f
+                Log.d(TAG, "✅ Repository: Document type match found: ${pdf.name}")
+            }
+            // Check for partial name matches
+            else if (hasSignificantNameOverlap(query, pdfName)) {
+                similarity = 0.8f
+                Log.d(TAG, "✅ Repository: Partial name match found: ${pdf.name}")
+            }
+            
+            if (similarity > 0.7f) {
+                results.add(Pair(pdf, similarity))
+            }
+        }
+        
+        // Sort by similarity score (highest first) and limit results
+        val sortedResults = results.sortedByDescending { it.second }
+        Log.d(TAG, "📊 Repository: Name-based search found ${sortedResults.size} matches")
+        
+        return@withContext sortedResults
+    }
+    
+    /**
+     * Check if the query matches a specific document type.
+     */
+    private fun isDocumentTypeMatch(query: String, pdfName: String): Boolean {
+        val documentTypes = mapOf(
+            "pan" to listOf("pan", "pancard", "pan card", "pan-card"),
+            "aadhar" to listOf("aadhar", "aadhaar", "aadhar card", "aadhaar card"),
+            "passport" to listOf("passport"),
+            "license" to listOf("license", "driving", "dl", "driving license"),
+            "voter" to listOf("voter", "voter id", "voterid"),
+            "bank" to listOf("bank", "statement", "passbook"),
+            "salary" to listOf("salary", "payslip", "pay slip"),
+            "invoice" to listOf("invoice", "bill", "receipt"),
+            "contract" to listOf("contract", "agreement"),
+            "certificate" to listOf("certificate", "cert", "degree", "diploma")
+        )
+        
+        for ((type, keywords) in documentTypes) {
+            if (query.contains(type)) {
+                for (keyword in keywords) {
+                    if (pdfName.contains(keyword)) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+    
+    /**
+     * Check if there's significant overlap between query and PDF name.
+     */
+    private fun hasSignificantNameOverlap(query: String, pdfName: String): Boolean {
+        val queryWords = query.split("\\s+".toRegex()).filter { it.length > 2 }
+        val nameWords = pdfName.split("\\s+".toRegex()).filter { it.length > 2 }
+        
+        var matches = 0
+        for (queryWord in queryWords) {
+            for (nameWord in nameWords) {
+                if (queryWord in nameWord || nameWord in queryWord) {
+                    matches++
+                    break
+                }
+            }
+        }
+        
+        // Consider it a match if at least 50% of query words match
+        return matches >= (queryWords.size * 0.5)
+    }
+
     /**
      * Perform vector search using ObjectBox's built-in vector search capabilities.
      * This method converts a user query to an embedding and searches for the most similar PDFs.
@@ -256,7 +434,7 @@ class PdfRepository(private val context: Context) {
      * @param topK Number of top results to return (default: 3)
      * @return List of most similar PDFs with similarity scores
      */
-    suspend fun vectorSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
+    suspend fun vectorSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "🔍 Repository: Starting ObjectBox vector search")
         Log.d(TAG, "📝 Repository: Query: '$queryText'")
         Log.d(TAG, "📊 Repository: Top K: $topK")
@@ -289,7 +467,7 @@ class PdfRepository(private val context: Context) {
      * @param topK Number of top results to return
      * @return List of similar PDFs with similarity scores
      */
-    private suspend fun performObjectBoxVectorSearch(queryEmbedding: FloatArray, topK: Int): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
+    private suspend fun performObjectBoxVectorSearch(queryEmbedding: FloatArray, topK: Int): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "🔍 Repository: Performing ObjectBox vector search")
         
         try {
@@ -301,7 +479,7 @@ class PdfRepository(private val context: Context) {
                 Log.d(TAG, "📊 Repository: No PDFs found in database")
                 return@withContext emptyList()
             }
-            val q = pdfBox.query(PdfEntity_.embedding.nearestNeighbors(queryEmbedding, topK))
+            val q = pdfBox.query(PdfEntity2_.embedding.nearestNeighbors(queryEmbedding, topK))
                 .build()
             val resultsWithScores = q.findWithScores()
             q.close()
@@ -322,7 +500,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return The original file if it exists, null otherwise
      */
-    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
+    fun getOriginalFile(pdfEntity: PdfEntity2): java.io.File? {
         return if (pdfEntity.localFilePath.isNotEmpty()) {
             fileStorageManager.getFile(pdfEntity.localFilePath)
         } else {
@@ -337,7 +515,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return True if the file exists, false otherwise
      */
-    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
+    fun hasOriginalFile(pdfEntity: PdfEntity2): Boolean {
         return if (pdfEntity.localFilePath.isNotEmpty()) {
             fileStorageManager.fileExists(pdfEntity.localFilePath)
         } else {
@@ -351,7 +529,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return The file size in bytes, or -1 if the file doesn't exist
      */
-    fun getOriginalFileSize(pdfEntity: PdfEntity): Long {
+    fun getOriginalFileSize(pdfEntity: PdfEntity2): Long {
         return if (pdfEntity.localFilePath.isNotEmpty()) {
             fileStorageManager.getFileSize(pdfEntity.localFilePath)
         } else {

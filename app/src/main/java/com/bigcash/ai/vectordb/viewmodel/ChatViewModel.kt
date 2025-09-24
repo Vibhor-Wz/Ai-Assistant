@@ -3,7 +3,7 @@ package com.bigcash.ai.vectordb.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.bigcash.ai.vectordb.data.PdfEntity
+import com.bigcash.ai.vectordb.data.PdfEntity2
 import com.bigcash.ai.vectordb.repository.PdfRepository
 import com.bigcash.ai.vectordb.service.FirebaseAiService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +34,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentQuery = MutableStateFlow("")
     val currentQuery: StateFlow<String> = _currentQuery.asStateFlow()
     
+    private val _searchResults = MutableStateFlow<List<PdfEntity2>>(emptyList())
+    val searchResults: StateFlow<List<PdfEntity2>> = _searchResults.asStateFlow()
+    
     init {
         // Add a welcome message
         addWelcomeMessage()
@@ -62,6 +65,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _currentQuery.value = message
         _isLoading.value = true
         _errorMessage.value = null
+        _searchResults.value = emptyList() // Clear previous search results
         
         // Add user message
         val userMessage = ChatMessage(
@@ -102,28 +106,35 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * Generate AI response for a given query using vector search and Firebase AI.
+     * Generate AI response for a given query using intelligent search and Firebase AI.
      * 
      * @param query The user's query
      * @return AI response text based on document search results
      */
     private suspend fun generateAIResponse(query: String): String {
         try {
-            // Perform vector search to find relevant documents
-            val searchResults = pdfRepository.vectorSearch(query, topK = 3)
+            // Use intelligent search that tries name matching first, then vector search
+            val searchResults = pdfRepository.intelligentSearch(query, topK = 3)
+            
+            // Store search results for UI display
+            _searchResults.value = searchResults.map { it.first }
             
             return if (searchResults.isNotEmpty()) {
                 // Extract document content and generate AI response
                 val documentData = buildDocumentData(searchResults)
                 firebaseAiService.generateResponseFromDocuments(query, documentData)
             } else {
+                // Clear search results when no documents found
+                _searchResults.value = emptyList()
                 // No relevant documents found
                 "I couldn't find any documents in your collection that are relevant to your query: '$query'. " +
                 "You might want to try uploading some documents first, or rephrase your question to be more specific."
             }
             
         } catch (e: Exception) {
-            // Fallback response if vector search fails
+            // Clear search results on error
+            _searchResults.value = emptyList()
+            // Fallback response if search fails
             return "I encountered an issue while searching through your documents. " +
                    "Please make sure you have uploaded some documents and try again."
         }
@@ -135,7 +146,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * @param searchResults List of PDF entities with similarity scores
      * @return Formatted document data string
      */
-    private fun buildDocumentData(searchResults: List<Pair<PdfEntity, Float>>): String {
+    private fun buildDocumentData(searchResults: List<Pair<PdfEntity2, Float>>): String {
         return searchResults.joinToString("\n\n") { (pdf, score) ->
             val hasOriginalFile = pdf.localFilePath.isNotEmpty()
             val fileInfo = if (hasOriginalFile) {
@@ -161,7 +172,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * @param pdfEntity The PDF entity
      * @return The original file if it exists, null otherwise
      */
-    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
+    fun getOriginalFile(pdfEntity: PdfEntity2): java.io.File? {
         return pdfRepository.getOriginalFile(pdfEntity)
     }
     
@@ -171,7 +182,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * @param pdfEntity The PDF entity
      * @return True if the original file exists, false otherwise
      */
-    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
+    fun hasOriginalFile(pdfEntity: PdfEntity2): Boolean {
         return pdfRepository.hasOriginalFile(pdfEntity)
     }
     
@@ -182,6 +193,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _messages.value = emptyList()
         _currentQuery.value = ""
         _errorMessage.value = null
+        _searchResults.value = emptyList()
         addWelcomeMessage()
     }
     
