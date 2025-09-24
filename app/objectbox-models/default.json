@@ -1,0 +1,141 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "1:8958787239341533618",
+      "lastPropertyId": "7:438851156081584088",
+      "name": "PdfEntity",
+      "properties": [
+        {
+          "id": "1:2704990693901832945",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7010768349576197268",
+          "name": "name",
+          "indexId": "1:7868617407423427856",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:6197765522094589239",
+          "name": "data",
+          "type": 9
+        },
+        {
+          "id": "4:4968420388058546311",
+          "name": "embedding",
+          "indexId": "4:7499026065574668386",
+          "type": 28,
+          "flags": 8
+        },
+        {
+          "id": "5:299597191863056974",
+          "name": "fileSize",
+          "type": 6
+        },
+        {
+          "id": "6:4770688779249499610",
+          "name": "uploadDate",
+          "type": 10
+        },
+        {
+          "id": "7:438851156081584088",
+          "name": "description",
+          "type": 9
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "3:2797253350659678715",
+      "lastPropertyId": "10:6288417160520481759",
+      "name": "TextChunkEntity",
+      "properties": [
+        {
+          "id": "1:9007232078301975403",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:1781243920224700470",
+          "name": "documentId",
+          "indexId": "3:6167786463798764985",
+          "type": 6,
+          "flags": 8
+        },
+        {
+          "id": "3:2796797445235674683",
+          "name": "text",
+          "type": 9
+        },
+        {
+          "id": "4:4545721266262605448",
+          "name": "embedding",
+          "type": 28
+        },
+        {
+          "id": "5:3006132139249787096",
+          "name": "chunkIndex",
+          "type": 5
+        },
+        {
+          "id": "6:4684339343548123984",
+          "name": "startPosition",
+          "type": 5
+        },
+        {
+          "id": "7:8123272520462883275",
+          "name": "endPosition",
+          "type": 5
+        },
+        {
+          "id": "8:447174919744978650",
+          "name": "processedDate",
+          "type": 10
+        },
+        {
+          "id": "9:1109493299326174102",
+          "name": "metadata",
+          "type": 9
+        },
+        {
+          "id": "10:6288417160520481759",
+          "name": "textLength",
+          "type": 5
+        }
+      ],
+      "relations": []
+    }
+  ],
+  "lastEntityId": "3:2797253350659678715",
+  "lastIndexId": "4:7499026065574668386",
+  "lastRelationId": "0:0",
+  "lastSequenceId": "0:0",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [
+    5792730029437268578
+  ],
+  "retiredIndexUids": [
+    1462922048078396348
+  ],
+  "retiredPropertyUids": [
+    8423106354900805611,
+    1859217061040943512,
+    8843142641515240612,
+    4775389550129075903,
+    1634490096136637984,
+    5695722604724600052,
+    5776174243039618464,
+    3698564916720240732,
+    2669616823738825486
+  ],
+  "retiredRelationUids": [],
+  "version": 1
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "749139923065",
+    "project_id": "aiassist-b35a0",
+    "storage_bucket": "aiassist-b35a0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:749139923065:android:736fab533caea9a6c804a8",
+        "android_client_info": {
+          "package_name": "com.bigcash.ai.vectordb"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAohZzF5HnS2SvhrCsPM6UUCuHhCL99Nyw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
