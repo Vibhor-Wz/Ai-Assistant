@@ -26,11 +26,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VectordbTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MainContent(
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                MainContent(
+                    modifier = Modifier
+                )
             }
         }
     }
@@ -49,11 +47,14 @@ fun MainContent(
     
     when (currentScreen) {
         Screen.PdfManagement -> {
-            PdfManagementScreen(
-                viewModel = pdfViewModel,
-                onNavigateToChat = { currentScreen = Screen.Chat },
-                modifier = modifier
-            )
+            Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                PdfManagementScreen(
+                    viewModel = pdfViewModel,
+                    onNavigateToChat = { currentScreen = Screen.Chat },
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+
         }
         Screen.Chat -> {
             ChatScreen(
