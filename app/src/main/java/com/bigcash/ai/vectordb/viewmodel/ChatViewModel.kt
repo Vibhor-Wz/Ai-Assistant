@@ -6,10 +6,19 @@ import androidx.lifecycle.viewModelScope
 import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.repository.PdfRepository
 import com.bigcash.ai.vectordb.service.FirebaseAiService
+import com.bigcash.ai.vectordb.service.ResponseBridge
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/**
+ * Data class for AI response with search results
+ */
+data class AiResponseWithResults(
+    val response: String,
+    val searchResults: List<Pair<PdfEntity, Float>>
+)
 
 /**
  * ViewModel for chat functionality.
@@ -20,7 +29,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // Services
     private val pdfRepository = PdfRepository(application)
     private val firebaseAiService = FirebaseAiService(application)
-    
+    private val responseBridge = ResponseBridge(application)
+
     // UI State
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -33,9 +43,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     
     private val _currentQuery = MutableStateFlow("")
     val currentQuery: StateFlow<String> = _currentQuery.asStateFlow()
-    
-    private val _searchResults = MutableStateFlow<List<PdfEntity>>(emptyList())
-    val searchResults: StateFlow<List<PdfEntity>> = _searchResults.asStateFlow()
     
     init {
         // Add a welcome message
@@ -65,7 +72,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _currentQuery.value = message
         _isLoading.value = true
         _errorMessage.value = null
-        _searchResults.value = emptyList() // Clear previous search results
         
         // Add user message
         val userMessage = ChatMessage(
@@ -75,14 +81,27 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         )
         _messages.value = _messages.value + userMessage
         
-        // Simulate AI response (for now)
+        // Generate AI response with bridge analysis
         viewModelScope.launch {
             try {
+                val aiResponseWithResults = generateAIResponse(message)
 
-                val aiResponse = generateAIResponse(message)
+                // Use ResponseBridge to analyze and decide what to return
+                val bridgeResult = responseBridge.analyzeResponse(
+                    aiResponse = aiResponseWithResults.response,
+                    searchResults = aiResponseWithResults.searchResults,
+                    userQuery = message
+                )
                 
+                // Log the bridge decision for testing
+                android.util.Log.d("ChatViewModel", "🌉 Bridge Decision:")
+                android.util.Log.d("ChatViewModel", "   Type: ${bridgeResult.responseType}")
+                android.util.Log.d("ChatViewModel", "   Confidence: ${bridgeResult.confidence}")
+                android.util.Log.d("ChatViewModel", "   File: ${bridgeResult.file?.name ?: "None"}")
+                android.util.Log.d("ChatViewModel", "   PDF Entity: ${bridgeResult.pdfEntity?.name ?: "None"}")
+
                 val aiMessage = ChatMessage(
-                    text = aiResponse,
+                    text = bridgeResult.content,
                     isUser = false,
                     timestamp = System.currentTimeMillis()
                 )
@@ -106,37 +125,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * Generate AI response for a given query using intelligent search and Firebase AI.
+     * Generate AI response for a given query using vector search and Firebase AI.
      * 
      * @param query The user's query
-     * @return AI response text based on document search results
+     * @return AI response with search results
      */
-    private suspend fun generateAIResponse(query: String): String {
+    private suspend fun generateAIResponse(query: String): AiResponseWithResults {
         try {
-            // Use intelligent search that tries name matching first, then vector search
-            val searchResults = pdfRepository.intelligentSearch(query, topK = 3)
+            // Perform vector search to find relevant documents
+            val searchResults = pdfRepository.vectorSearch(query, topK = 3)
             
-            // Store search results for UI display
-            _searchResults.value = searchResults.map { it.first }
-            
-            return if (searchResults.isNotEmpty()) {
+            val response = if (searchResults.isNotEmpty()) {
                 // Extract document content and generate AI response
                 val documentData = buildDocumentData(searchResults)
                 firebaseAiService.generateResponseFromDocuments(query, documentData)
             } else {
-                // Clear search results when no documents found
-                _searchResults.value = emptyList()
                 // No relevant documents found
                 "I couldn't find any documents in your collection that are relevant to your query: '$query'. " +
                 "You might want to try uploading some documents first, or rephrase your question to be more specific."
             }
             
+            return AiResponseWithResults(response, searchResults)
+
         } catch (e: Exception) {
-            // Clear search results on error
-            _searchResults.value = emptyList()
-            // Fallback response if search fails
-            return "I encountered an issue while searching through your documents. " +
+            // Fallback response if vector search fails
+            val fallbackResponse = "I encountered an issue while searching through your documents. " +
                    "Please make sure you have uploaded some documents and try again."
+            return AiResponseWithResults(fallbackResponse, emptyList())
         }
     }
     
@@ -193,7 +208,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _messages.value = emptyList()
         _currentQuery.value = ""
         _errorMessage.value = null
-        _searchResults.value = emptyList()
         addWelcomeMessage()
     }
     

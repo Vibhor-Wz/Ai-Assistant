@@ -527,15 +527,34 @@ class FirebaseAiService(private val context: Context) {
         YOUR TASK:
         1. If the retrieved documents clearly answer the query, summarize and provide the answer in plain language.
         2. If the documents only partially match, provide what is available and explain that some details are missing.
-        3. If the documents are unrelated or don’t contain any useful information, DO NOT mention document names or unrelated topics. 
+        3. If the documents are unrelated or don't contain any useful information, DO NOT mention document names or unrelated topics. 
            Simply give a natural, generic response such as:
-           - "I couldn’t find your address in the documents provided."
+           - "I couldn't find your address in the documents provided."
            - "No document contains that type of information."
         4. Keep the tone conversational, clear, and user-friendly.
+        5. Do not ask anything for further, only answer the query 
+        
+        RESPONSE TYPE INDICATOR:
+        At the end of your response, add a response type indicator in the following format:
+        
+        [RESPONSE_TYPE: <TYPE>]
+        
+        Where <TYPE> should be one of:
+        - TEXT_ONLY: If the user is asking for specific information that can be extracted from the documents (e.g., "What's my address?", "What's my PAN number?")
+        - FULL_FILE: If the user is asking for the complete document/file itself (e.g., "Give me my Aadhaar card", "Show me my PAN document", "Send me my bank statement")
+        - MIXED: If the user's request is ambiguous or could benefit from both information and file access (e.g., "What documents do I have?", "Tell me about my files")
+        
+        Examples:
+        - Query: "What's my address from Aadhaar?" → [RESPONSE_TYPE: TEXT_ONLY]
+        - Query: "Give me my PAN card" → [RESPONSE_TYPE: FULL_FILE]
+        - Query: "What documents do I have?" → [RESPONSE_TYPE: MIXED]
+        - Query: "Show me my bank statement" → [RESPONSE_TYPE: FULL_FILE]
+        - Query: "What's my account balance?" → [RESPONSE_TYPE: TEXT_ONLY]
         
         Important: 
-        - Never include file names or irrelevant document details in your answer when they don’t actually help answer the query.
+        - Never include file names or irrelevant document details in your answer when they don't actually help answer the query.
         - Always prioritize clarity and avoid confusing the user with unrelated content.
+        - Always end your response with the [RESPONSE_TYPE: <TYPE>] indicator.
     """.trimIndent()
     }
 
