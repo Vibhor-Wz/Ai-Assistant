@@ -119,15 +119,30 @@ fun PdfManagementScreen(
                 modifier = Modifier.weight(1f)
             )
 
-            IconButton(
-                onClick = onNavigateToChat,
-                enabled = true
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Email,
-                    contentDescription = "Chat",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            Row {
+                IconButton(
+                    onClick = { 
+                        viewModel.clearAllData()
+                    },
+                    enabled = !isLoading
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Clear Database",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+                
+                IconButton(
+                    onClick = onNavigateToChat,
+                    enabled = true
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Email,
+                        contentDescription = "Chat",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
 
