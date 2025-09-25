@@ -360,6 +360,30 @@ class PdfRepository(private val context: Context) {
     }
     
     /**
+     * Clear all data from the database.
+     * This is useful when schema changes require a fresh start.
+     * WARNING: This will delete all data permanently.
+     */
+    fun clearAllData() {
+        Log.d(TAG, "🗑️ Repository: Clearing all database data")
+        try {
+            ObjectBox.clearAllData()
+            Log.d(TAG, "✅ Repository: All data cleared successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Repository: Error clearing data", e)
+        }
+    }
+    
+    /**
+     * Check if the database is empty.
+     * 
+     * @return True if no data exists, false otherwise
+     */
+    fun isDatabaseEmpty(): Boolean {
+        return ObjectBox.isEmpty()
+    }
+    
+    /**
      * Clean up resources.
      */
     fun cleanup() {

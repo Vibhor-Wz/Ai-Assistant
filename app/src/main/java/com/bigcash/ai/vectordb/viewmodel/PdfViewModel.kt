@@ -186,6 +186,37 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun getOriginalFileSize(pdfEntity: PdfEntity): Long {
         return repository.getOriginalFileSize(pdfEntity)
     }
+    
+    /**
+     * Clear all data from the database.
+     * This is useful when schema changes require a fresh start.
+     * WARNING: This will delete all data permanently.
+     */
+    fun clearAllData() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            
+            try {
+                repository.clearAllData()
+                _pdfs.value = emptyList()
+                _uploadSuccess.value = false
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to clear data: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+    
+    /**
+     * Check if the database is empty.
+     * 
+     * @return True if no data exists, false otherwise
+     */
+    fun isDatabaseEmpty(): Boolean {
+        return repository.isDatabaseEmpty()
+    }
 
     
     /**

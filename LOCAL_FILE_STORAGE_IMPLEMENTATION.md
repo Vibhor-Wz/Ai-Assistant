@@ -100,6 +100,29 @@ app/files/
 - Defines the uploads directory for FileProvider
 - Ensures secure file access
 
+## Database Reset Functionality
+
+### Schema Change Handling
+When adding new fields to existing ObjectBox entities (like the `localFilePath` field), existing database records may cause deserialization errors. The app includes a database reset functionality to handle this:
+
+### Clear Database Button
+- **Location**: Header of the PDF Management screen (red trash icon)
+- **Purpose**: Clears all data from the database
+- **Use Case**: When schema changes require a fresh start
+- **Warning**: This permanently deletes all data
+
+### When to Use
+- After adding new fields to existing entities
+- When encountering "Could not create entity object" errors
+- During development when schema changes are needed
+- When starting fresh with the new file storage feature
+
+### Implementation Details
+- `ObjectBox.clearAllData()`: Clears all PDF and TextChunk entities
+- `PdfRepository.clearAllData()`: Repository-level data clearing
+- `PdfViewModel.clearAllData()`: UI-level data clearing with loading states
+- Automatic UI refresh after clearing
+
 ## Future Enhancements
 
 1. **File Compression**: Optional compression for large files
@@ -107,6 +130,7 @@ app/files/
 3. **File Versioning**: Support for multiple versions of the same document
 4. **Batch Operations**: Bulk file management features
 5. **Storage Analytics**: Usage statistics and cleanup recommendations
+6. **Database Migration**: Automatic schema migration for production use
 
 ## Testing
 
