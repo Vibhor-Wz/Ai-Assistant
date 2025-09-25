@@ -22,7 +22,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bigcash.ai.vectordb.viewmodel.ChatMessage
 import com.bigcash.ai.vectordb.viewmodel.ChatViewModel
+import com.bigcash.ai.vectordb.ui.components.PdfListItem
 import kotlinx.coroutines.launch
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
+import androidx.compose.ui.platform.LocalContext
+import java.io.File
 
 /**
  * Chat screen for AI-powered document search and interaction.
@@ -35,9 +41,11 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     chatViewModel: ChatViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isLoading by chatViewModel.isLoading.collectAsStateWithLifecycle()
     val errorMessage by chatViewModel.errorMessage.collectAsStateWithLifecycle()
+    val searchResults by chatViewModel.searchResults.collectAsStateWithLifecycle()
 
     var messageText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -128,6 +136,32 @@ fun ChatScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                // Document search results
+                if (searchResults.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Relevant Documents:",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+
+                    items(searchResults) { pdf ->
+                        PdfListItem(
+                            pdf = pdf,
+                            onViewOriginal = {
+                                val originalFile = chatViewModel.getOriginalFile(pdf)
+                                originalFile?.let { file ->
+                                    openFileWithExternalApp(context, file)
+                                }
+                            },
+                            isLoading = isLoading,
+                            showDeleteButton = false
+                        )
                     }
                 }
             }
@@ -269,4 +303,53 @@ private fun formatTimestamp(timestamp: Long): String {
     val date = java.util.Date(timestamp)
     val formatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
     return formatter.format(date)
+}
+
+/**
+ * Open a file with an external app using FileProvider.
+ */
+private fun openFileWithExternalApp(context: android.content.Context, file: File) {
+    try {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, getMimeType(file.extension))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+        } else {
+            // Fallback: try to open with any app that can handle the file
+            val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "*/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(fallbackIntent)
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("ChatScreen", "Error opening file: ${file.name}", e)
+    }
+}
+
+/**
+ * Get MIME type based on file extension.
+ */
+private fun getMimeType(extension: String): String {
+    return when (extension.lowercase()) {
+        "pdf" -> "application/pdf"
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "txt" -> "text/plain"
+        "doc" -> "application/msword"
+        "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "xls" -> "application/vnd.ms-excel"
+        "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else -> "*/*"
+    }
 }

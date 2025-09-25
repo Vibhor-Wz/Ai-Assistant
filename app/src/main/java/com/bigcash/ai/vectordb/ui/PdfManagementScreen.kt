@@ -21,7 +21,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.viewmodel.PdfViewModel
 import kotlinx.coroutines.launch
 import java.io.InputStream
@@ -29,6 +28,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.material.icons.filled.Build
 import androidx.core.content.FileProvider
+import com.bigcash.ai.vectordb.ui.components.PdfListItem
 import java.io.File
 
 /**
@@ -256,7 +256,8 @@ fun PdfManagementScreen(
                                 openFileWithExternalApp(context, file)
                             }
                         },
-                        isLoading = isLoading
+                        isLoading = isLoading,
+                        showDeleteButton = true
                     )
                 }
             }
@@ -345,108 +346,6 @@ fun UploadDialog(
     )
 }
 
-/**
- * List item for displaying PDF information.
- */
-@Composable
-fun PdfListItem(
-    pdf: PdfEntity,
-    onDelete: () -> Unit,
-    onViewOriginal: () -> Unit,
-    isLoading: Boolean
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = pdf.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = "Size: ${formatFileSize(pdf.fileSize)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (pdf.description.isNotEmpty()) {
-                    Text(
-                        text = pdf.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-
-                Text(
-                    text = "Uploaded: ${pdf.uploadDate.toString().substringBefore(" ")}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-                
-                if (pdf.localFilePath.isNotEmpty()) {
-                    Text(
-                        text = "Local file: ${pdf.localFilePath.substringAfterLast("/")}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                }
-            }
-
-            Row {
-                IconButton(
-                    onClick = onViewOriginal,
-                    enabled = !isLoading && pdf.localFilePath.isNotEmpty()
-                ) {
-                    Icon(
-                        Icons.Filled.Build,
-                        contentDescription = "View Original File",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                
-                IconButton(
-                    onClick = onDelete,
-                    enabled = !isLoading
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete PDF",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Format file size in human-readable format.
- */
-private fun formatFileSize(bytes: Long): String {
-    return when {
-        bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-        bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
-        else -> "${bytes / (1024 * 1024 * 1024)} GB"
-    }
-}
 
 /**
  * Open a file with an external app using FileProvider.
