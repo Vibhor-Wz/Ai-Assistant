@@ -3,7 +3,7 @@ package com.bigcash.ai.vectordb.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.bigcash.ai.vectordb.data.PdfEntity2
+import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.repository.PdfRepository
 import com.bigcash.ai.vectordb.service.FirebaseAiService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,8 +34,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentQuery = MutableStateFlow("")
     val currentQuery: StateFlow<String> = _currentQuery.asStateFlow()
     
-    private val _searchResults = MutableStateFlow<List<PdfEntity2>>(emptyList())
-    val searchResults: StateFlow<List<PdfEntity2>> = _searchResults.asStateFlow()
+    private val _searchResults = MutableStateFlow<List<PdfEntity>>(emptyList())
+    val searchResults: StateFlow<List<PdfEntity>> = _searchResults.asStateFlow()
     
     init {
         // Add a welcome message
@@ -146,7 +146,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * @param searchResults List of PDF entities with similarity scores
      * @return Formatted document data string
      */
-    private fun buildDocumentData(searchResults: List<Pair<PdfEntity2, Float>>): String {
+    private fun buildDocumentData(searchResults: List<Pair<PdfEntity, Float>>): String {
         return searchResults.joinToString("\n\n") { (pdf, score) ->
             val hasOriginalFile = pdf.localFilePath.isNotEmpty()
             val fileInfo = if (hasOriginalFile) {
@@ -172,7 +172,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * @param pdfEntity The PDF entity
      * @return The original file if it exists, null otherwise
      */
-    fun getOriginalFile(pdfEntity: PdfEntity2): java.io.File? {
+    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
         return pdfRepository.getOriginalFile(pdfEntity)
     }
     
@@ -182,7 +182,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * @param pdfEntity The PDF entity
      * @return True if the original file exists, false otherwise
      */
-    fun hasOriginalFile(pdfEntity: PdfEntity2): Boolean {
+    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
         return pdfRepository.hasOriginalFile(pdfEntity)
     }
     

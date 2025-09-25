@@ -3,7 +3,7 @@ package com.bigcash.ai.vectordb.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.bigcash.ai.vectordb.data.PdfEntity2
+import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.repository.PdfRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,8 +19,8 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PdfRepository(application)
 
     // UI State
-    private val _pdfs = MutableStateFlow<List<PdfEntity2>>(emptyList())
-    val pdfs: StateFlow<List<PdfEntity2>> = _pdfs.asStateFlow()
+    private val _pdfs = MutableStateFlow<List<PdfEntity>>(emptyList())
+    val pdfs: StateFlow<List<PdfEntity>> = _pdfs.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -153,7 +153,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      * @param id The ID of the PDF
      * @return The PDF entity or null if not found
      */
-    suspend fun getPdfById(id: Long): PdfEntity2? {
+    suspend fun getPdfById(id: Long): PdfEntity? {
         return repository.getPdfById(id)
     }
     
@@ -163,7 +163,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return The original file if it exists, null otherwise
      */
-    fun getOriginalFile(pdfEntity: PdfEntity2): java.io.File? {
+    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
         return repository.getOriginalFile(pdfEntity)
     }
     
@@ -173,7 +173,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return True if the file exists, false otherwise
      */
-    fun hasOriginalFile(pdfEntity: PdfEntity2): Boolean {
+    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
         return repository.hasOriginalFile(pdfEntity)
     }
     
@@ -183,7 +183,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return The file size in bytes, or -1 if the file doesn't exist
      */
-    fun getOriginalFileSize(pdfEntity: PdfEntity2): Long {
+    fun getOriginalFileSize(pdfEntity: PdfEntity): Long {
         return repository.getOriginalFileSize(pdfEntity)
     }
 

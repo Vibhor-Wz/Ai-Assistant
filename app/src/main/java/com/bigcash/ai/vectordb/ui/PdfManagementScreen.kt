@@ -21,7 +21,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bigcash.ai.vectordb.data.PdfEntity2
 import com.bigcash.ai.vectordb.viewmodel.PdfViewModel
 import kotlinx.coroutines.launch
 import java.io.InputStream

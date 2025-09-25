@@ -3,8 +3,8 @@ package com.bigcash.ai.vectordb.repository
 import android.content.Context
 import android.util.Log
 import com.bigcash.ai.vectordb.data.ObjectBox
-import com.bigcash.ai.vectordb.data.PdfEntity2
-import com.bigcash.ai.vectordb.data.PdfEntity2_
+import com.bigcash.ai.vectordb.data.PdfEntity
+import com.bigcash.ai.vectordb.data.PdfEntity_
 import com.bigcash.ai.vectordb.service.EmbeddingServiceFactory
 import com.bigcash.ai.vectordb.service.PdfTextExtractor
 import com.bigcash.ai.vectordb.utils.FileStorageManager
@@ -25,7 +25,7 @@ class PdfRepository(private val context: Context) {
         private const val TAG = "VECTOR_DEBUG" // Single tag for filtering all vector-related logs
     }
     
-    private val pdfBox: Box<PdfEntity2> = ObjectBox.get().boxFor(PdfEntity2::class.java)
+    private val pdfBox: Box<PdfEntity> = ObjectBox.get().boxFor(PdfEntity::class.java)
     private val pdfTextExtractor = PdfTextExtractor(context)
     private val embeddingService = EmbeddingServiceFactory.getDefaultEmbeddingService(context)
     private val fileStorageManager = FileStorageManager(context)
@@ -36,7 +36,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity to save
      * @return The ID of the saved entity
      */
-    suspend fun savePdf(pdfEntity: PdfEntity2): Long = withContext(Dispatchers.IO) {
+    suspend fun savePdf(pdfEntity: PdfEntity): Long = withContext(Dispatchers.IO) {
         pdfBox.put(pdfEntity)
     }
     
@@ -45,7 +45,7 @@ class PdfRepository(private val context: Context) {
      *
      * @return List of all PDF entities
      */
-    suspend fun getAllPdfs(): List<PdfEntity2> = withContext(Dispatchers.IO) {
+    suspend fun getAllPdfs(): List<PdfEntity> = withContext(Dispatchers.IO) {
         pdfBox.all
     }
     
@@ -55,7 +55,7 @@ class PdfRepository(private val context: Context) {
      * @param id The ID of the PDF to retrieve
      * @return The PDF entity or null if not found
      */
-    suspend fun getPdfById(id: Long): PdfEntity2? = withContext(Dispatchers.IO) {
+    suspend fun getPdfById(id: Long): PdfEntity? = withContext(Dispatchers.IO) {
         pdfBox.get(id)
     }
     
@@ -96,9 +96,9 @@ class PdfRepository(private val context: Context) {
      * @param name The name or part of the name to search for
      * @return List of PDF entities matching the search criteria
      */
-    suspend fun searchPdfsByName(name: String): List<PdfEntity2> = withContext(Dispatchers.IO) {
+    suspend fun searchPdfsByName(name: String): List<PdfEntity> = withContext(Dispatchers.IO) {
         val q = pdfBox.query()
-            .contains(PdfEntity2_.name, name, QueryBuilder.StringOrder.CASE_INSENSITIVE)
+            .contains(PdfEntity_.name, name, QueryBuilder.StringOrder.CASE_INSENSITIVE)
             .build()
         val find = q.find()
         q.close()
@@ -175,9 +175,9 @@ class PdfRepository(private val context: Context) {
      * @param name The name of the PDF
      * @param data The PDF file data as ByteArray
      * @param description Optional description
-     * @return PdfEntity2 with extracted text and generated embedding
+     * @return PdfEntity with extracted text and generated embedding
      */
-    suspend fun createPdfEntity(name: String, data: ByteArray, description: String = ""): PdfEntity2 ?  = withContext(Dispatchers.IO) {
+    suspend fun createPdfEntity(name: String, data: ByteArray, description: String = ""): PdfEntity ?  = withContext(Dispatchers.IO) {
         Log.d(TAG, "🚀 Repository: Starting PDF entity creation")
         Log.d(TAG, "📄 Repository: Processing PDF: $name (${data.size} bytes)")
         
@@ -213,7 +213,7 @@ class PdfRepository(private val context: Context) {
                 generateMockEmbedding()
             }
             
-            val pdfEntity = PdfEntity2(
+            val pdfEntity = PdfEntity(
                 name = name,
                 data = extractedText,
                 embedding = embedding,
@@ -243,7 +243,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity to update
      * @return The updated PDF entity ID
      */
-    suspend fun updatePdf(pdfEntity: PdfEntity2): Long = withContext(Dispatchers.IO) {
+    suspend fun updatePdf(pdfEntity: PdfEntity): Long = withContext(Dispatchers.IO) {
         pdfBox.put(pdfEntity)
     }
 
@@ -256,7 +256,7 @@ class PdfRepository(private val context: Context) {
      * @param topK Number of top results to return (default: 3)
      * @return List of most relevant PDFs with similarity scores
      */
-    suspend fun intelligentSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
+    suspend fun intelligentSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "🔍 Repository: Starting intelligent search")
         Log.d(TAG, "📝 Repository: Query: '$queryText'")
         Log.d(TAG, "📊 Repository: Top K: $topK")
@@ -334,11 +334,11 @@ class PdfRepository(private val context: Context) {
      * @param queryText The user's query
      * @return List of matching documents with high similarity scores
      */
-    private suspend fun tryNameBasedSearch(queryText: String): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
+    private suspend fun tryNameBasedSearch(queryText: String): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "🔍 Repository: Trying name-based search for: '$queryText'")
         
         val query = queryText.lowercase().trim()
-        val results = mutableListOf<Pair<PdfEntity2, Float>>()
+        val results = mutableListOf<Pair<PdfEntity, Float>>()
         
         // Get all PDFs for analysis
         val allPdfs = pdfBox.all
@@ -434,7 +434,7 @@ class PdfRepository(private val context: Context) {
      * @param topK Number of top results to return (default: 3)
      * @return List of most similar PDFs with similarity scores
      */
-    suspend fun vectorSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
+    suspend fun vectorSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "🔍 Repository: Starting ObjectBox vector search")
         Log.d(TAG, "📝 Repository: Query: '$queryText'")
         Log.d(TAG, "📊 Repository: Top K: $topK")
@@ -467,7 +467,7 @@ class PdfRepository(private val context: Context) {
      * @param topK Number of top results to return
      * @return List of similar PDFs with similarity scores
      */
-    private suspend fun performObjectBoxVectorSearch(queryEmbedding: FloatArray, topK: Int): List<Pair<PdfEntity2, Float>> = withContext(Dispatchers.IO) {
+    private suspend fun performObjectBoxVectorSearch(queryEmbedding: FloatArray, topK: Int): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "🔍 Repository: Performing ObjectBox vector search")
         
         try {
@@ -479,7 +479,7 @@ class PdfRepository(private val context: Context) {
                 Log.d(TAG, "📊 Repository: No PDFs found in database")
                 return@withContext emptyList()
             }
-            val q = pdfBox.query(PdfEntity2_.embedding.nearestNeighbors(queryEmbedding, topK))
+            val q = pdfBox.query(PdfEntity_.embedding.nearestNeighbors(queryEmbedding, topK))
                 .build()
             val resultsWithScores = q.findWithScores()
             q.close()
@@ -500,7 +500,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return The original file if it exists, null otherwise
      */
-    fun getOriginalFile(pdfEntity: PdfEntity2): java.io.File? {
+    fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
         return if (pdfEntity.localFilePath.isNotEmpty()) {
             fileStorageManager.getFile(pdfEntity.localFilePath)
         } else {
@@ -515,7 +515,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return True if the file exists, false otherwise
      */
-    fun hasOriginalFile(pdfEntity: PdfEntity2): Boolean {
+    fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
         return if (pdfEntity.localFilePath.isNotEmpty()) {
             fileStorageManager.fileExists(pdfEntity.localFilePath)
         } else {
@@ -529,7 +529,7 @@ class PdfRepository(private val context: Context) {
      * @param pdfEntity The PDF entity containing the local file path
      * @return The file size in bytes, or -1 if the file doesn't exist
      */
-    fun getOriginalFileSize(pdfEntity: PdfEntity2): Long {
+    fun getOriginalFileSize(pdfEntity: PdfEntity): Long {
         return if (pdfEntity.localFilePath.isNotEmpty()) {
             fileStorageManager.getFileSize(pdfEntity.localFilePath)
         } else {

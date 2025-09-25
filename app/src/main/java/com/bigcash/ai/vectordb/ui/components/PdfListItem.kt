@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.bigcash.ai.vectordb.data.PdfEntity2
+import com.bigcash.ai.vectordb.data.PdfEntity
 
 /**
  * List item for displaying PDF information.
@@ -19,7 +19,7 @@ import com.bigcash.ai.vectordb.data.PdfEntity2
  */
 @Composable
 fun PdfListItem(
-    pdf: PdfEntity2,
+    pdf: PdfEntity,
     onViewOriginal: () -> Unit,
     onDelete: (() -> Unit)? = null, // Optional delete functionality
     isLoading: Boolean = false,
