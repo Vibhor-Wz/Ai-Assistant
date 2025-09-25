@@ -24,7 +24,11 @@ import com.bigcash.ai.vectordb.ui.components.MarkwonText
 import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.compose.ui.platform.LocalContext
+import android.util.Log
 import java.io.File
+
+// TAG constants for logging
+private const val TAG = "VECTOR_DEBUG"
 
 /**
  * Chat screen for AI-powered document search and interaction.
@@ -37,6 +41,7 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     chatViewModel: ChatViewModel = viewModel()
 ) {
+    
     val context = LocalContext.current
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isLoading by chatViewModel.isLoading.collectAsStateWithLifecycle()
@@ -45,9 +50,16 @@ fun ChatScreen(
     var messageText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
+    // Log screen initialization
+    LaunchedEffect(Unit) {
+        Log.d(TAG, "🚀 ChatScreen: Screen initialized")
+        Log.d(TAG, "📊 ChatScreen: Initial message count: ${messages.size}")
+    }
+
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
+            Log.d(TAG, "📜 ChatScreen: Auto-scrolling to message ${messages.size - 1}")
             listState.animateScrollToItem(messages.size - 1)
         }
     }
@@ -71,7 +83,11 @@ fun ChatScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = { chatViewModel.clearChat() }
+                        onClick = { 
+                            Log.d(TAG, "🗑️ ChatScreen: Clearing chat")
+                            chatViewModel.clearChat()
+                            Log.d(TAG, "✅ ChatScreen: Chat cleared")
+                        }
                     ) {
                         Text(
                             text = "Clear",
@@ -99,7 +115,8 @@ fun ChatScreen(
                 items(messages) { message ->
                     MessageBubble(
                         message = message,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        chatViewModel = chatViewModel
                     )
                 }
 
@@ -133,32 +150,7 @@ fun ChatScreen(
                         }
                     }
                 }
-//
-//                // Document search results
-//                if (searchResults.isNotEmpty()) {
-//                    item {
-//                        Text(
-//                            text = "Relevant Documents:",
-//                            style = MaterialTheme.typography.titleMedium,
-//                            fontWeight = FontWeight.Bold,
-//                            modifier = Modifier.padding(vertical = 8.dp)
-//                        )
-//                    }
-//
-//                    items(searchResults) { pdf ->
-//                        PdfListItem(
-//                            pdf = pdf,
-//                            onViewOriginal = {
-//                                val originalFile = chatViewModel.getOriginalFile(pdf)
-//                                originalFile?.let { file ->
-//                                    openFileWithExternalApp(context, file)
-//                                }
-//                            },
-//                            isLoading = isLoading,
-//                            showDeleteButton = false
-//                        )
-//                    }
-//                }
+
             }
 
             // Error message
@@ -207,8 +199,12 @@ fun ChatScreen(
                     IconButton(
                         onClick = {
                             if (messageText.isNotBlank() && !isLoading) {
+                                Log.d(TAG, "📤 ChatScreen: Sending message: '$messageText'")
                                 chatViewModel.sendMessage(messageText)
                                 messageText = ""
+                                Log.d(TAG, "✅ ChatScreen: Message sent and input cleared")
+                            } else {
+                                Log.d(TAG, "⚠️ ChatScreen: Cannot send message - text: '${messageText.isNotBlank()}', loading: $isLoading")
                             }
                         },
                         enabled = messageText.isNotBlank() && !isLoading
@@ -235,8 +231,29 @@ fun ChatScreen(
 @Composable
 fun MessageBubble(
     message: ChatMessage,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    chatViewModel: ChatViewModel
 ) {
+    
+    val context = LocalContext.current
+    
+    // Log message details
+    LaunchedEffect(message) {
+        Log.d(TAG, "💬 MessageBubble: Rendering message")
+        Log.d(TAG, "   📝 Text length: ${message.text.length}")
+        Log.d(TAG, "   👤 Is user: ${message.isUser}")
+        Log.d(TAG, "   📄 Has PDF entity: ${message.pdfEntity != null}")
+        Log.d(TAG, "   📁 Has file: ${message.file != null}")
+        if (message.pdfEntity != null) {
+            Log.d(TAG, "   📄 PDF name: ${message.pdfEntity.name}")
+            Log.d(TAG, "   📁 PDF local path: ${message.pdfEntity.localFilePath}")
+        }
+        if (message.file != null) {
+            Log.d(TAG, "   📁 File name: ${message.file.name}")
+            Log.d(TAG, "   📊 File size: ${message.file.length()} bytes")
+        }
+    }
+    
     Row(
         modifier = modifier,
         horizontalArrangement = if (message.isUser) {
@@ -278,6 +295,29 @@ fun MessageBubble(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    
+                    // Show file card if file is available and response is not TEXT_ONLY
+                    if (message.pdfEntity != null) {
+                        Log.d(TAG, "📄 MessageBubble: Displaying PDF file card for: ${message.pdfEntity.name}")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        PdfListItem(
+                            pdf = message.pdfEntity,
+                            onViewOriginal = {
+                                Log.d(TAG, "👆 MessageBubble: User clicked view original file")
+                                val fileToOpen = message.file ?: chatViewModel.getOriginalFile(message.pdfEntity)
+                                if (fileToOpen != null) {
+                                    Log.d(TAG, "📁 MessageBubble: Opening file: ${fileToOpen.name}")
+                                    openFileWithExternalApp(context, fileToOpen)
+                                } else {
+                                    Log.w(TAG, "⚠️ MessageBubble: No file available to open")
+                                }
+                            },
+                            onDelete = null, // No delete functionality in chat
+                            showDeleteButton = false // Hide delete button
+                        )
+                    } else {
+                        Log.d(TAG, "📄 MessageBubble: No PDF entity to display")
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -310,30 +350,44 @@ private fun formatTimestamp(timestamp: Long): String {
  * Open a file with an external app using FileProvider.
  */
 private fun openFileWithExternalApp(context: android.content.Context, file: File) {
+
+    
     try {
+        Log.d(TAG, "📁 FileOpener: Attempting to open file: ${file.name}")
+        Log.d(TAG, "📁 FileOpener: File path: ${file.absolutePath}")
+        Log.d(TAG, "📁 FileOpener: File size: ${file.length()} bytes")
+        Log.d(TAG, "📁 FileOpener: File exists: ${file.exists()}")
+        
         val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
             file
         )
+        Log.d(TAG, "🔗 FileOpener: Generated URI: $uri")
+        
+        val mimeType = getMimeType(file.extension)
+        Log.d(TAG, "📄 FileOpener: MIME type: $mimeType")
         
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, getMimeType(file.extension))
+            setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         
         if (intent.resolveActivity(context.packageManager) != null) {
+            Log.d(TAG, "✅ FileOpener: Found app to handle file, starting activity")
             context.startActivity(intent)
         } else {
+            Log.w(TAG, "⚠️ FileOpener: No specific app found, trying fallback")
             // Fallback: try to open with any app that can handle the file
             val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "*/*")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(fallbackIntent)
+            Log.d(TAG, "🔄 FileOpener: Fallback intent started")
         }
     } catch (e: Exception) {
-        android.util.Log.e("ChatScreen", "Error opening file: ${file.name}", e)
+        Log.e(TAG, "❌ FileOpener: Error opening file: ${file.name}", e)
     }
 }
 
@@ -341,7 +395,9 @@ private fun openFileWithExternalApp(context: android.content.Context, file: File
  * Get MIME type based on file extension.
  */
 private fun getMimeType(extension: String): String {
-    return when (extension.lowercase()) {
+
+    
+    val mimeType = when (extension.lowercase()) {
         "pdf" -> "application/pdf"
         "jpg", "jpeg" -> "image/jpeg"
         "png" -> "image/png"
@@ -353,4 +409,7 @@ private fun getMimeType(extension: String): String {
         "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         else -> "*/*"
     }
+    
+    Log.d(TAG, "📄 MimeTypeHelper: Extension '$extension' -> MIME type '$mimeType'")
+    return mimeType
 }
