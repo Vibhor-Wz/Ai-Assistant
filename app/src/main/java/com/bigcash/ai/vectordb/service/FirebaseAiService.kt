@@ -525,7 +525,7 @@ class FirebaseAiService(private val context: Context) {
         $documentData
         
         YOUR TASK:
-        1. If the retrieved documents clearly answer the query, summarize and provide the answer in plain language.
+        1. If the retrieved documents clearly answer the query, summarize and provide the answer using markdown formatting for better readability.
         2. If the documents only partially match, provide what is available and explain that some details are missing.
         3. If the documents are unrelated or don't contain any useful information, DO NOT mention document names or unrelated topics. 
            Simply give a natural, generic response such as:
@@ -533,6 +533,7 @@ class FirebaseAiService(private val context: Context) {
            - "No document contains that type of information."
         4. Keep the tone conversational, clear, and user-friendly.
         5. Do not ask anything for further, only answer the query 
+        6. If user query is for document or file, do not provide any text answer, only say generic response"
         
         RESPONSE TYPE INDICATOR:
         At the end of your response, add a response type indicator in the following format:
@@ -551,9 +552,19 @@ class FirebaseAiService(private val context: Context) {
         - Query: "Show me my bank statement" → [RESPONSE_TYPE: FULL_FILE]
         - Query: "What's my account balance?" → [RESPONSE_TYPE: TEXT_ONLY]
         
+        FORMATTING GUIDELINES:
+        - Use **bold** for important points and key information
+        - Use *italics* for emphasis
+        - Use bullet points (-) for lists
+        - Use numbered lists (1., 2., etc.) for step-by-step instructions
+        - Use > blockquotes for important quotes or excerpts from documents
+        - Use ## headings for major sections when organizing complex information
+        - Use [links](url) when referencing external resources (if applicable)
+        
         Important: 
         - Never include file names or irrelevant document details in your answer when they don't actually help answer the query.
         - Always prioritize clarity and avoid confusing the user with unrelated content.
+        - Use markdown formatting to make your response more readable and organized.
         - Always end your response with the [RESPONSE_TYPE: <TYPE>] indicator.
     """.trimIndent()
     }

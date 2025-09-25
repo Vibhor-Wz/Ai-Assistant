@@ -1,6 +1,5 @@
 package com.bigcash.ai.vectordb.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,8 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,9 +20,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bigcash.ai.vectordb.viewmodel.ChatMessage
 import com.bigcash.ai.vectordb.viewmodel.ChatViewModel
 import com.bigcash.ai.vectordb.ui.components.PdfListItem
-import kotlinx.coroutines.launch
+import com.bigcash.ai.vectordb.ui.components.MarkwonText
 import android.content.Intent
-import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.compose.ui.platform.LocalContext
 import java.io.File
@@ -45,7 +41,6 @@ fun ChatScreen(
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isLoading by chatViewModel.isLoading.collectAsStateWithLifecycle()
     val errorMessage by chatViewModel.errorMessage.collectAsStateWithLifecycle()
-    val searchResults by chatViewModel.searchResults.collectAsStateWithLifecycle()
 
     var messageText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -138,32 +133,32 @@ fun ChatScreen(
                         }
                     }
                 }
-
-                // Document search results
-                if (searchResults.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Relevant Documents:",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-                    }
-
-                    items(searchResults) { pdf ->
-                        PdfListItem(
-                            pdf = pdf,
-                            onViewOriginal = {
-                                val originalFile = chatViewModel.getOriginalFile(pdf)
-                                originalFile?.let { file ->
-                                    openFileWithExternalApp(context, file)
-                                }
-                            },
-                            isLoading = isLoading,
-                            showDeleteButton = false
-                        )
-                    }
-                }
+//
+//                // Document search results
+//                if (searchResults.isNotEmpty()) {
+//                    item {
+//                        Text(
+//                            text = "Relevant Documents:",
+//                            style = MaterialTheme.typography.titleMedium,
+//                            fontWeight = FontWeight.Bold,
+//                            modifier = Modifier.padding(vertical = 8.dp)
+//                        )
+//                    }
+//
+//                    items(searchResults) { pdf ->
+//                        PdfListItem(
+//                            pdf = pdf,
+//                            onViewOriginal = {
+//                                val originalFile = chatViewModel.getOriginalFile(pdf)
+//                                originalFile?.let { file ->
+//                                    openFileWithExternalApp(context, file)
+//                                }
+//                            },
+//                            isLoading = isLoading,
+//                            showDeleteButton = false
+//                        )
+//                    }
+//                }
             }
 
             // Error message
@@ -269,15 +264,21 @@ fun MessageBubble(
             Column(
                 modifier = Modifier.padding(12.dp)
             ) {
-                Text(
-                    text = message.text,
-                    color = if (message.isUser) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                if (message.isUser) {
+                    // User messages - plain text
+                    Text(
+                        text = message.text,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    // AI messages - markdown text
+                    MarkwonText(
+                        markdown = message.text,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 
                 Spacer(modifier = Modifier.height(4.dp))
                 
