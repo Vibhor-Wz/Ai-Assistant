@@ -547,16 +547,15 @@ class FirebaseAiService(private val context: Context) {
     
     [RESPONSE_TYPE: <TYPE>]
     
-    Where <TYPE> should be one of:
-    - TEXT_ONLY: If the user is asking for specific information like numbers, addresses, or account details.
-    - FULL_FILE: If the user is asking for the complete document/file itself.
-    - MIXED: If the user's request is ambiguous or could require both information and file access.
+     Where <TYPE> should be one of:
+     - TEXT_ONLY: If the user is asking for specific information that can be extracted from the documents (e.g., "What's my address?", "What's my PAN number?")
+     - FULL_FILE: If the user is asking for the complete document/file itself (e.g., "Give me my Aadhaar card", "Show me my PAN document", "Send me my bank statement")
+     - MIXED: If the user's request is ambiguous or could benefit from both information and file access (e.g., "What documents do I have?", "Tell me about my files")
     
     Examples:
     - Query: "What's my PAN number?" → [RESPONSE_TYPE: TEXT_ONLY]
     - Query: "Give me my Aadhaar card" → [RESPONSE_TYPE: FULL_FILE]
     - Query: "Show me my PAN" → [RESPONSE_TYPE: FULL_FILE]
-    - Query: "What documents do I have?" → [RESPONSE_TYPE: MIXED]
     - Query: "What's my Aadhaar number?" → [RESPONSE_TYPE: TEXT_ONLY]
     
     FORMATTING GUIDELINES:
