@@ -95,25 +95,30 @@ dependencies {
     implementation(libs.generativeai)
     
     // Ktor dependencies for Gemini AI client
-    implementation("io.ktor:ktor-client-android:3.3.0")
-    implementation("io.ktor:ktor-client-cio:3.3.0")
-    implementation("io.ktor:ktor-client-core:3.3.0")
-    implementation("io.ktor:ktor-client-json:3.3.0")
-    implementation("io.ktor:ktor-client-serialization:3.3.0")
-    implementation("io.ktor:ktor-client-logging:3.3.0")
-    implementation("io.ktor:ktor-client-content-negotiation:3.3.0")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:3.3.0")
+    implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.json)
+    implementation(libs.ktor.client.serialization)
+    implementation(libs.ktor.client.logging)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
 
     // Kotlinx serialization for JSON
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation(libs.kotlinx.serialization.json)
 
     // Markwon for text rendering
-    implementation("io.noties.markwon:core:4.6.2")
-    implementation("io.noties.markwon:html:4.6.2")
-    implementation("io.noties.markwon:image:4.6.2")
-    implementation("io.noties.markwon:linkify:4.6.2")
-    implementation("io.noties.markwon:ext-tables:4.6.2")
-    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
-    implementation("io.noties.markwon:ext-tasklist:4.6.2")
+    implementation(libs.core)
+    implementation(libs.html)
+    implementation(libs.image)
+    implementation(libs.linkify)
+    implementation(libs.ext.tables)
+    implementation(libs.ext.strikethrough)
+    implementation(libs.ext.tasklist)
+
+
+    // YouTube Transcript Kotlin module
+    implementation(project(":youtube-transcript-kotlin"))
+
 
 }

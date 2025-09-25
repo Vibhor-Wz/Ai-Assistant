@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.repository.PdfRepository
+import com.youtubetranscript.YouTubeTranscriptApi
+import com.youtubetranscript.TranscriptException
+import com.bigcash.ai.vectordb.service.FirebaseAiService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +20,7 @@ import kotlinx.coroutines.launch
 class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = PdfRepository(application)
+    private val firebaseAiService = FirebaseAiService(application)
 
     // UI State
     private val _pdfs = MutableStateFlow<List<PdfEntity>>(emptyList())
@@ -30,6 +34,22 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uploadSuccess = MutableStateFlow(false)
     val uploadSuccess: StateFlow<Boolean> = _uploadSuccess.asStateFlow()
+
+    // YouTube Transcript State
+    private val _isFetchingTranscript = MutableStateFlow(false)
+    val isFetchingTranscript: StateFlow<Boolean> = _isFetchingTranscript.asStateFlow()
+
+    private val _isSummarizingTranscript = MutableStateFlow(false)
+    val isSummarizingTranscript: StateFlow<Boolean> = _isSummarizingTranscript.asStateFlow()
+
+    private val _transcriptText = MutableStateFlow("")
+    val transcriptText: StateFlow<String> = _transcriptText.asStateFlow()
+
+    private val _summaryText = MutableStateFlow("")
+    val summaryText: StateFlow<String> = _summaryText.asStateFlow()
+
+    private val _transcriptError = MutableStateFlow<String?>(null)
+    val transcriptError: StateFlow<String?> = _transcriptError.asStateFlow()
 
     init {
         loadAllPdfs()
@@ -216,6 +236,87 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun isDatabaseEmpty(): Boolean {
         return repository.isDatabaseEmpty()
+    }
+
+    /**
+     * Fetch YouTube transcript and generate AI summary.
+     *
+     * @param youtubeUrl The YouTube video URL
+     * @param language The language code for the transcript (default: "en")
+     */
+    fun fetchYouTubeTranscript(youtubeUrl: String, language: String = "en") {
+        viewModelScope.launch {
+            _isFetchingTranscript.value = true
+            _transcriptError.value = null
+            _transcriptText.value = ""
+            _summaryText.value = ""
+
+            try {
+                // Extract video ID from URL
+                val videoId = YouTubeTranscriptApi.extractVideoId(youtubeUrl)
+                
+                // Fetch the raw transcript using the new module
+                val transcriptSegments = YouTubeTranscriptApi.getTranscript(
+                    videoId = videoId,
+                    languages = listOf(language)
+                )
+                
+                // Convert segments to text
+                val transcript = transcriptSegments.joinToString(" ") { it.text }
+                _transcriptText.value = transcript
+
+                // Start summarization process
+                _isSummarizingTranscript.value = true
+                try {
+                    val summary = firebaseAiService.summarizeYouTubeTranscript(transcript)
+                    _summaryText.value = summary
+                } catch (e: Exception) {
+                    // If summarization fails, we still have the raw transcript
+                    _transcriptError.value = "Failed to generate summary: ${e.message}"
+                } finally {
+                    _isSummarizingTranscript.value = false
+                }
+
+            } catch (e: TranscriptException) {
+                _transcriptError.value = "Failed to fetch transcript: ${e.message}"
+            } catch (e: Exception) {
+                _transcriptError.value = "Failed to fetch transcript: ${e.message}"
+            } finally {
+                _isFetchingTranscript.value = false
+            }
+        }
+    }
+
+    /**
+     * Clear YouTube transcript data.
+     */
+    fun clearTranscriptData() {
+        _transcriptText.value = ""
+        _summaryText.value = ""
+        _transcriptError.value = null
+        _isFetchingTranscript.value = false
+        _isSummarizingTranscript.value = false
+    }
+
+    /**
+     * Get the current transcript text.
+     */
+    fun getTranscriptText(): String {
+        return _transcriptText.value
+    }
+
+    /**
+     * Get the current summary text.
+     */
+    fun getSummaryText(): String {
+        return _summaryText.value
+    }
+
+    /**
+     * Check if transcript is being fetched.
+     */
+    fun isTranscriptLoading(): Boolean {
+        return _isFetchingTranscript.value || _isSummarizingTranscript.value
     }
 
     

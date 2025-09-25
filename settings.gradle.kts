@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "vectordb"
 include(":app")
+include(":youtube-transcript-kotlin")
  

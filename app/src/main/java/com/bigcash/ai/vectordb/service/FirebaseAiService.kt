@@ -616,6 +616,151 @@ class FirebaseAiService(private val context: Context) {
     }
 
     /**
+     * Summarize a YouTube transcript using Firebase AI.
+     * This function takes a raw YouTube transcript and generates a comprehensive summary.
+     *
+     * @param transcript The raw transcript text from YouTube
+     * @param videoTitle Optional video title for context
+     * @return AI-generated summary of the transcript
+     */
+    suspend fun summarizeYouTubeTranscript(
+        transcript: String,
+        videoTitle: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🎥 FirebaseAiService: Summarizing YouTube transcript")
+        Log.d(TAG, "📝 FirebaseAiService: Transcript length: ${transcript.length} characters")
+        Log.d(TAG, "📺 FirebaseAiService: Video title: $videoTitle")
+
+        try {
+            // Ensure user is authenticated
+            if (!ensureAuthenticated()) {
+                Log.w(TAG, "⚠️ FirebaseAiService: Authentication failed, using fallback")
+                return@withContext generateTranscriptFallback(transcript, videoTitle)
+            }
+
+            val prompt = buildTranscriptSummaryPrompt(transcript, videoTitle)
+            Log.d(TAG, "📋 FirebaseAiService: Generated transcript summary prompt")
+
+            val response = generativeModel.generateContent(prompt)
+            val summary = response.text ?: generateTranscriptFallback(transcript, videoTitle)
+
+            Log.d(TAG, "✅ FirebaseAiService: Transcript summary generated successfully")
+            Log.d(TAG, "📊 FirebaseAiService: Summary length: ${summary.length} characters")
+
+            return@withContext summary
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FirebaseAiService: Error summarizing transcript", e)
+            return@withContext generateTranscriptFallback(transcript, videoTitle)
+        }
+    }
+
+    /**
+     * Build a comprehensive prompt for summarizing YouTube transcripts.
+     *
+     * @param transcript The raw transcript text
+     * @param videoTitle Optional video title
+     * @return Formatted prompt for the AI model
+     */
+    private fun buildTranscriptSummaryPrompt(transcript: String, videoTitle: String?): String {
+        val titleContext = if (videoTitle != null) {
+            "Video Title: $videoTitle\n\n"
+        } else {
+            ""
+        }
+
+        return """
+        You are an AI assistant specialized in summarizing YouTube video transcripts. 
+        Your task is to create a comprehensive, well-structured summary of the provided transcript.
+        
+        $titleContext
+        TRANSCRIPT TO SUMMARIZE:
+        $transcript
+        
+        YOUR TASK:
+        1. **Create a comprehensive summary** that captures the main points, key topics, and important details from the transcript.
+        2. **Structure the summary** with clear headings and sections for better readability.
+        3. **Identify the main themes** and topics discussed in the video.
+        4. **Extract key insights** and important information that would be valuable to someone who didn't watch the video.
+        5. **Maintain the original context** and meaning while making it more concise and organized.
+        6. **Use markdown formatting** to make the summary visually appealing and easy to read.
+        
+        SUMMARY STRUCTURE:
+        ## 📺 Video Summary
+        
+        ### 🎯 Main Topics
+        - List the main topics and themes discussed
+        
+        ### 🔑 Key Points
+        - Highlight the most important points and insights
+        
+        ### 📝 Detailed Summary
+        - Provide a comprehensive summary of the content
+        
+        ### 💡 Key Takeaways
+        - List the main takeaways and actionable insights
+        
+        ### 🏷️ Tags
+        - Suggest relevant tags or categories for this content
+        
+        FORMATTING GUIDELINES:
+        - Use **bold** for important points and key information
+        - Use *italics* for emphasis
+        - Use bullet points (-) for lists
+        - Use numbered lists (1., 2., etc.) for step-by-step information
+        - Use > blockquotes for important quotes or key statements
+        - Use ## headings for major sections
+        - Use ### headings for subsections
+        - Use emojis to make sections more visually appealing
+        
+        IMPORTANT:
+        - Make the summary comprehensive but concise
+        - Preserve the original meaning and context
+        - Use clear, professional language
+        - Organize information logically
+        - Make it useful for someone who wants to understand the video content without watching it
+        - If the transcript contains multiple languages, note this and summarize accordingly
+        - If there are timestamps or technical details, include them where relevant
+        """.trimIndent()
+    }
+
+    /**
+     * Generate a fallback summary when AI service is unavailable.
+     */
+    private fun generateTranscriptFallback(transcript: String, videoTitle: String?): String {
+        val wordCount = transcript.split("\\s+".toRegex()).size
+        val charCount = transcript.length
+        val lines = transcript.split("\n").size
+        
+        return """
+        ## 📺 YouTube Video Summary
+        
+        ${if (videoTitle != null) "**Video Title:** $videoTitle\n" else ""}
+        
+        ### 📊 Transcript Statistics
+        - **Word Count:** $wordCount words
+        - **Character Count:** $charCount characters  
+        - **Lines:** $lines lines
+        
+        ### 📝 Content Overview
+        This is a transcript from a YouTube video. The content appears to be substantial with $wordCount words, suggesting it covers detailed information or discussion.
+        
+        ### 🔍 Key Characteristics
+        - **Content Type:** Video transcript
+        - **Length:** ${if (wordCount > 1000) "Long-form content" else if (wordCount > 500) "Medium-length content" else "Short content"}
+        - **Language:** ${if (transcript.any { it.code in 0x0900..0x097F }) "Contains Hindi/Devanagari script" else "English or other language"}
+        
+        ### 📋 Raw Transcript Preview
+        ${transcript.take(500)}${if (transcript.length > 500) "..." else ""}
+        
+        ### ⚠️ Note
+        This is a basic analysis generated without AI processing. For a detailed summary, ensure Firebase AI service is properly configured.
+        
+        **Full Transcript Length:** ${transcript.length} characters
+        """.trimIndent()
+    }
+
+    /**
      * Enum for supported file types.
      */
     enum class FileType {

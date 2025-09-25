@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +31,16 @@ import androidx.compose.material.icons.filled.Build
 import androidx.core.content.FileProvider
 import com.bigcash.ai.vectordb.ui.components.PdfListItem
 import java.io.File
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.viewinterop.AndroidView
+import io.noties.markwon.Markwon
+import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.image.ImagesPlugin
+import io.noties.markwon.linkify.LinkifyPlugin
+import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.tasklist.TaskListPlugin
 
 /**
  * Main screen for PDF management functionality.
@@ -50,12 +61,24 @@ fun PdfManagementScreen(
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val uploadSuccess by viewModel.uploadSuccess.collectAsStateWithLifecycle()
+    
+    // YouTube Transcript State
+    val isFetchingTranscript by viewModel.isFetchingTranscript.collectAsStateWithLifecycle()
+    val isSummarizingTranscript by viewModel.isSummarizingTranscript.collectAsStateWithLifecycle()
+    val transcriptText by viewModel.transcriptText.collectAsStateWithLifecycle()
+    val summaryText by viewModel.summaryText.collectAsStateWithLifecycle()
+    val transcriptError by viewModel.transcriptError.collectAsStateWithLifecycle()
 
     // UI State
     var pdfName by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     var selectedPdfUri by remember { mutableStateOf<Uri?>(null) }
     var showUploadDialog by remember { mutableStateOf(false) }
+    
+    // YouTube UI State
+    var showYouTubeDialog by remember { mutableStateOf(false) }
+    var showSummaryDialog by remember { mutableStateOf(false) }
+    var youtubeUrl by remember { mutableStateOf("") }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -96,6 +119,17 @@ fun PdfManagementScreen(
     LaunchedEffect(uploadSuccess) {
         if (uploadSuccess) {
             viewModel.clearUploadSuccess()
+        }
+    }
+
+    // Handle YouTube transcript results
+    LaunchedEffect(transcriptText, summaryText, transcriptError) {
+        when {
+            summaryText.isNotEmpty() -> {
+                showYouTubeDialog = false
+                youtubeUrl = ""
+                showSummaryDialog = true
+            }
         }
     }
 
@@ -201,10 +235,20 @@ fun PdfManagementScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Any File Type")
                     }
+
+                    Button(
+                        onClick = { showYouTubeDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "YouTube Transcript")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("YouTube Transcript")
+                    }
                 }
 
                 Text(
-                    text = "Supports PDF files, images (JPG, PNG, etc.), and documents (DOC, TXT, etc.)",
+                    text = "Supports PDF files, images (JPG, PNG, etc.), documents (DOC, TXT, etc.), and YouTube transcripts",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
@@ -321,6 +365,37 @@ fun PdfManagementScreen(
             viewModel.clearError()
         }
     }
+
+    // YouTube URL Input Dialog
+    if (showYouTubeDialog) {
+        YouTubeUrlDialog(
+            url = youtubeUrl,
+            onUrlChange = { youtubeUrl = it },
+            onConfirm = {
+                viewModel.fetchYouTubeTranscript(youtubeUrl, "en")
+                // Don't close dialog immediately - let LaunchedEffect handle it
+            },
+            onDismiss = {
+                showYouTubeDialog = false
+                youtubeUrl = ""
+                viewModel.clearTranscriptData()
+            },
+            isLoading = isFetchingTranscript || isSummarizingTranscript,
+            isSummarizing = isSummarizingTranscript,
+            error = transcriptError
+        )
+    }
+
+    // Summary Display Dialog
+    if (showSummaryDialog) {
+        SummaryDisplayDialog(
+            summary = summaryText,
+            onDismiss = {
+                showSummaryDialog = false
+                viewModel.clearTranscriptData()
+            },
+        )
+    }
 }
 
 /**
@@ -409,4 +484,203 @@ private fun getMimeType(extension: String): String {
         "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         else -> "*/*"
     }
+}
+
+/**
+ * Dialog for entering YouTube URL and fetching transcript.
+ */
+@Composable
+fun YouTubeUrlDialog(
+    url: String,
+    onUrlChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    isLoading: Boolean,
+    isSummarizing: Boolean,
+    error: String?
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("YouTube Transcript") },
+        text = {
+            Column {
+                Text("Enter a YouTube URL to fetch its transcript:")
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = onUrlChange,
+                    label = { Text("YouTube URL") },
+                    placeholder = { Text("https://youtu.be/VIDEO_ID") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                )
+                
+                if (error != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Error: $error",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                
+                if (isLoading) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Text(
+                            text = if (isSummarizing) "Summarizing transcript..." else "Fetching transcript...",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = url.isNotBlank() && !isLoading
+            ) {
+                Text("Fetch Transcript")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isLoading
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog for displaying YouTube transcript.
+ */
+@Composable
+fun TranscriptDisplayDialog(
+    transcript: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("YouTube Transcript") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+            ) {
+                Text(
+                    text = "Transcript:",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                if (transcript.isNotEmpty()) {
+                    Text(
+                        text = transcript,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = "No transcript available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog for displaying AI-generated YouTube transcript summary.
+ */
+@Composable
+fun SummaryDisplayDialog(
+    summary: String,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    
+    // Initialize Markwon for markdown rendering
+    val markwon = remember {
+        Markwon.builder(context)
+            .usePlugin(HtmlPlugin.create())
+            .usePlugin(ImagesPlugin.create())
+            .usePlugin(LinkifyPlugin.create())
+            .usePlugin(TablePlugin.create(context))
+            .usePlugin(StrikethroughPlugin.create())
+            .usePlugin(TaskListPlugin.create(context))
+            .build()
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("📺 YouTube Video Summary")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+            ) {
+                Text(
+                    text = "AI-Generated Summary:",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                if (summary.isNotEmpty()) {
+                    // Use Markwon to render markdown
+                    AndroidView(
+                        factory = { context ->
+                            val textView = android.widget.TextView(context)
+                            textView.textSize = 14f
+                            textView.setTextColor(android.graphics.Color.BLACK)
+                            textView.setPadding(0, 0, 0, 0)
+                            markwon.setMarkdown(textView, summary)
+                            textView
+                        },
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = "No summary available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
