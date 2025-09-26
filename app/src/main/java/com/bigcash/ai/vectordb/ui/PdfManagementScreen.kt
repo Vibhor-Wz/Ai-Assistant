@@ -2,6 +2,8 @@ package com.bigcash.ai.vectordb.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import android.Manifest
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +29,7 @@ import kotlinx.coroutines.launch
 import java.io.InputStream
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.compose.material.icons.filled.Build
 import androidx.core.content.FileProvider
 import com.bigcash.ai.vectordb.ui.components.PdfListItem
@@ -41,6 +44,9 @@ import io.noties.markwon.linkify.LinkifyPlugin
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Create
 
 /**
  * Main screen for PDF management functionality.
@@ -68,6 +74,13 @@ fun PdfManagementScreen(
     val transcriptText by viewModel.transcriptText.collectAsStateWithLifecycle()
     val summaryText by viewModel.summaryText.collectAsStateWithLifecycle()
     val transcriptError by viewModel.transcriptError.collectAsStateWithLifecycle()
+    
+    // Speech Recognition State
+    val isRecognizingSpeech by viewModel.isRecognizingSpeech.collectAsStateWithLifecycle()
+    val recognizedText by viewModel.recognizedText.collectAsStateWithLifecycle()
+    val isGeneratingSpeechSummary by viewModel.isGeneratingSpeechSummary.collectAsStateWithLifecycle()
+    val speechSummaryText by viewModel.speechSummaryText.collectAsStateWithLifecycle()
+    val speechError by viewModel.speechError.collectAsStateWithLifecycle()
 
     // UI State
     var pdfName by remember { mutableStateOf("") }
@@ -79,6 +92,22 @@ fun PdfManagementScreen(
     var showYouTubeDialog by remember { mutableStateOf(false) }
     var showSummaryDialog by remember { mutableStateOf(false) }
     var youtubeUrl by remember { mutableStateOf("") }
+    
+    // Speech Recognition UI State
+    var showSpeechSummaryDialog by remember { mutableStateOf(false) }
+
+    // Permission launcher for RECORD_AUDIO
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Log.d("PdfManagementScreen", "✅ Microphone permission granted")
+            viewModel.startSpeechRecognition()
+        } else {
+            Log.w("PdfManagementScreen", "❌ Microphone permission denied")
+            // Error will be handled by ViewModel
+        }
+    }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -108,6 +137,7 @@ fun PdfManagementScreen(
         }
     }
 
+
     // Show snackbar for errors
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -129,6 +159,15 @@ fun PdfManagementScreen(
                 showYouTubeDialog = false
                 youtubeUrl = ""
                 showSummaryDialog = true
+            }
+        }
+    }
+
+    // Handle speech recognition results
+    LaunchedEffect(recognizedText, speechSummaryText, speechError) {
+        when {
+            speechSummaryText.isNotEmpty() -> {
+                showSpeechSummaryDialog = true
             }
         }
     }
@@ -245,10 +284,76 @@ fun PdfManagementScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("YouTube Transcript")
                     }
+
+                    Button(
+                        onClick = {
+                            if (viewModel.hasRecordAudioPermission()) {
+                                viewModel.startSpeechRecognition()
+                            } else {
+                                Log.d("PdfManagementScreen", "🎤 Requesting microphone permission")
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading && !isRecognizingSpeech && !isGeneratingSpeechSummary
+                    ) {
+                        Icon(Icons.Filled.Create, contentDescription = "Voice Recognition")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Voice Recognition")
+                    }
+
+                // Speech recognition status indicator
+                if (isRecognizingSpeech || isGeneratingSpeechSummary) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (isRecognizingSpeech) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Listening...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else if (isGeneratingSpeechSummary) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Generating summary...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                } else if (!viewModel.hasRecordAudioPermission()) {
+                    // Permission status indicator
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "⚠️ Microphone permission required",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
 
                 Text(
-                    text = "Supports PDF files, images (JPG, PNG, etc.), documents (DOC, TXT, etc.), and YouTube transcripts",
+                    text = "Supports PDF files, images (JPG, PNG, etc.), documents (DOC, TXT, etc.), YouTube transcripts, and voice recognition",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
@@ -323,6 +428,7 @@ fun PdfManagementScreen(
         }
 
     }
+    }
 
     // Upload Dialog
     if (showUploadDialog) {
@@ -394,6 +500,20 @@ fun PdfManagementScreen(
                 showSummaryDialog = false
                 viewModel.clearTranscriptData()
             },
+        )
+    }
+
+    // Speech Recognition Summary Dialog
+    if (showSpeechSummaryDialog) {
+        SpeechSummaryDialog(
+            recognizedText = recognizedText,
+            summary = speechSummaryText,
+            isLoading = isGeneratingSpeechSummary,
+            error = speechError,
+            onDismiss = {
+                showSpeechSummaryDialog = false
+                viewModel.clearSpeechData()
+            }
         )
     }
 }
@@ -673,6 +793,92 @@ fun SummaryDisplayDialog(
                         text = "No summary available",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog for displaying speech recognition results and AI-generated summary.
+ */
+@Composable
+fun SpeechSummaryDialog(
+    recognizedText: String,
+    summary: String,
+    isLoading: Boolean,
+    error: String?,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Voice Recognition Summary") },
+        text = {
+            Column {
+                if (recognizedText.isNotEmpty()) {
+                    Text(
+                        text = "Recognized Text:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = recognizedText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(8.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                
+                if (error != null) {
+                    Text(
+                        text = "Error: $error",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                
+                if (isLoading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Generating summary...",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                } else if (summary.isNotEmpty()) {
+                    Text(
+                        text = "AI Summary:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(8.dp)
                     )
                 }
             }

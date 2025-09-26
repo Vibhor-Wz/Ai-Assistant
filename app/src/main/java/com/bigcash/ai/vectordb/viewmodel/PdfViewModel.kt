@@ -1,6 +1,8 @@
 package com.bigcash.ai.vectordb.viewmodel
 
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bigcash.ai.vectordb.data.PdfEntity
@@ -8,6 +10,8 @@ import com.bigcash.ai.vectordb.repository.PdfRepository
 import com.youtubetranscript.YouTubeTranscriptApi
 import com.youtubetranscript.TranscriptException
 import com.bigcash.ai.vectordb.service.FirebaseAiService
+import com.bigcash.ai.vectordb.service.SpeechRecognitionManager
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,8 +23,13 @@ import kotlinx.coroutines.launch
  */
 class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        private const val TAG = "PdfViewModel"
+    }
+
     private val repository = PdfRepository(application)
     private val firebaseAiService = FirebaseAiService(application)
+    private var speechRecognitionManager: SpeechRecognitionManager? = null
 
     // UI State
     private val _pdfs = MutableStateFlow<List<PdfEntity>>(emptyList())
@@ -51,8 +60,26 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _transcriptError = MutableStateFlow<String?>(null)
     val transcriptError: StateFlow<String?> = _transcriptError.asStateFlow()
 
+    // Speech Recognition State
+    private val _isRecognizingSpeech = MutableStateFlow(false)
+    val isRecognizingSpeech: StateFlow<Boolean> = _isRecognizingSpeech.asStateFlow()
+
+    private val _recognizedText = MutableStateFlow("")
+    val recognizedText: StateFlow<String> = _recognizedText.asStateFlow()
+
+    private val _isGeneratingSpeechSummary = MutableStateFlow(false)
+    val isGeneratingSpeechSummary: StateFlow<Boolean> = _isGeneratingSpeechSummary.asStateFlow()
+
+    private val _speechSummaryText = MutableStateFlow("")
+    val speechSummaryText: StateFlow<String> = _speechSummaryText.asStateFlow()
+
+    private val _speechError = MutableStateFlow<String?>(null)
+    val speechError: StateFlow<String?> = _speechError.asStateFlow()
+
     init {
+        Log.d(TAG, "🚀 PdfViewModel: Initializing ViewModel")
         loadAllPdfs()
+        initializeSpeechRecognition()
     }
 
     /**
@@ -319,12 +346,207 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         return _isFetchingTranscript.value || _isSummarizingTranscript.value
     }
 
+    /**
+     * Initialize speech recognition manager.
+     */
+    private fun initializeSpeechRecognition() {
+        try {
+            Log.d(TAG, "🎤 PdfViewModel: Initializing speech recognition")
+            
+            speechRecognitionManager = SpeechRecognitionManager(
+                context = getApplication(),
+                onResult = { recognizedText ->
+                    Log.d(TAG, "🎤 PdfViewModel: Speech recognition result received")
+                    processRecognizedSpeech(recognizedText)
+                },
+                onError = { error ->
+                    Log.e(TAG, "❌ PdfViewModel: Speech recognition error: $error")
+                    _speechError.value = error
+                    _isRecognizingSpeech.value = false
+                },
+                onStart = {
+                    Log.d(TAG, "🎤 PdfViewModel: Speech recognition started")
+                    _isRecognizingSpeech.value = true
+                    _speechError.value = null
+                },
+                onEnd = {
+                    Log.d(TAG, "🎤 PdfViewModel: Speech recognition ended")
+                    _isRecognizingSpeech.value = false
+                }
+            )
+            
+            Log.d(TAG, "✅ PdfViewModel: Speech recognition initialized successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ PdfViewModel: Error initializing speech recognition", e)
+            _speechError.value = "Failed to initialize speech recognition: ${e.message}"
+        }
+    }
+
+    /**
+     * Start speech recognition.
+     */
+    fun startSpeechRecognition() {
+        try {
+            Log.d(TAG, "🎤 PdfViewModel: Starting speech recognition")
+            
+            if (speechRecognitionManager == null) {
+                Log.e(TAG, "❌ PdfViewModel: Speech recognition not initialized")
+                _speechError.value = "Speech recognition not initialized"
+                return
+            }
+            
+            if (!speechRecognitionManager!!.isRecognitionAvailable()) {
+                Log.e(TAG, "❌ PdfViewModel: Speech recognition not available on device")
+                _speechError.value = "Speech recognition not available on this device"
+                return
+            }
+            
+            if (!hasRecordAudioPermission()) {
+                Log.e(TAG, "❌ PdfViewModel: RECORD_AUDIO permission not granted")
+                _speechError.value = "Microphone permission is required for speech recognition. Please grant the permission in Settings."
+                return
+            }
+            
+            if (speechRecognitionManager!!.isListening()) {
+                Log.w(TAG, "⚠️ PdfViewModel: Already listening, ignoring start request")
+                return
+            }
+            
+            _speechError.value = null
+            _recognizedText.value = ""
+            _speechSummaryText.value = ""
+            
+            speechRecognitionManager!!.startListening()
+            Log.d(TAG, "✅ PdfViewModel: Speech recognition started successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ PdfViewModel: Error starting speech recognition", e)
+            _speechError.value = "Failed to start speech recognition: ${e.message}"
+            _isRecognizingSpeech.value = false
+        }
+    }
+
+
+    /**
+     * Stop speech recognition.
+     */
+    fun stopSpeechRecognition() {
+        try {
+            Log.d(TAG, "🛑 PdfViewModel: Stopping speech recognition")
+            speechRecognitionManager?.stopListening()
+            Log.d(TAG, "✅ PdfViewModel: Speech recognition stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ PdfViewModel: Error stopping speech recognition", e)
+        }
+    }
+
+    /**
+     * Cancel speech recognition.
+     */
+    fun cancelSpeechRecognition() {
+        try {
+            Log.d(TAG, "🎤 PdfViewModel: Canceling speech recognition")
+            speechRecognitionManager?.cancelListening()
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ PdfViewModel: Error canceling speech recognition", e)
+        }
+    }
+
+    /**
+     * Process recognized speech text and generate summary using Gemini.
+     *
+     * @param recognizedText The text recognized from speech
+     */
+    private fun processRecognizedSpeech(recognizedText: String) {
+        viewModelScope.launch {
+            Log.d(TAG, "🎤 PdfViewModel: Processing recognized speech text")
+            _recognizedText.value = recognizedText
+            _isGeneratingSpeechSummary.value = true
+            _speechError.value = null
+            _speechSummaryText.value = ""
+
+            try {
+                Log.d(TAG, "🤖 PdfViewModel: Generating AI summary for speech text")
+                // Generate summary using Firebase AI service
+                val summary = firebaseAiService.summarizeSpeechText(recognizedText)
+                _speechSummaryText.value = summary
+                Log.d(TAG, "✅ PdfViewModel: AI summary generated successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ PdfViewModel: Error generating AI summary", e)
+                _speechError.value = "Failed to generate summary: ${e.message}"
+            } finally {
+                _isGeneratingSpeechSummary.value = false
+            }
+        }
+    }
+
+    /**
+     * Clear speech recognition data.
+     */
+    fun clearSpeechData() {
+        _recognizedText.value = ""
+        _speechSummaryText.value = ""
+        _speechError.value = null
+        _isRecognizingSpeech.value = false
+        _isGeneratingSpeechSummary.value = false
+    }
+
+    /**
+     * Set speech recognition loading state.
+     */
+    fun setSpeechRecognitionLoading(isLoading: Boolean) {
+        _isRecognizingSpeech.value = isLoading
+    }
+
+    /**
+     * Get the current recognized text.
+     */
+    fun getRecognizedText(): String {
+        return _recognizedText.value
+    }
+
+    /**
+     * Get the current speech summary text.
+     */
+    fun getSpeechSummaryText(): String {
+        return _speechSummaryText.value
+    }
+
+    /**
+     * Check if speech recognition is loading.
+     */
+    fun isSpeechRecognitionLoading(): Boolean {
+        return _isRecognizingSpeech.value || _isGeneratingSpeechSummary.value
+    }
+
+    /**
+     * Check if RECORD_AUDIO permission is granted.
+     */
+    fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            getApplication(),
+            android.Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Get the required permission for speech recognition.
+     */
+    fun getRequiredPermission(): String {
+        return android.Manifest.permission.RECORD_AUDIO
+    }
+
     
     /**
      * Clean up resources when ViewModel is destroyed.
      */
     override fun onCleared() {
+        Log.d(TAG, "🧹 PdfViewModel: Cleaning up ViewModel resources")
         super.onCleared()
         repository.cleanup()
+        speechRecognitionManager?.cleanup()
+        speechRecognitionManager = null
+        Log.d(TAG, "✅ PdfViewModel: Cleanup completed")
     }
 }

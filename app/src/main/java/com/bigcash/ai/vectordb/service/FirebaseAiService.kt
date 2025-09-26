@@ -656,6 +656,88 @@ class FirebaseAiService(private val context: Context) {
     }
 
     /**
+     * Summarize speech text using Firebase AI.
+     * This function takes recognized speech text and generates a comprehensive summary.
+     *
+     * @param speechText The text recognized from speech
+     * @return AI-generated summary of the speech text
+     */
+    suspend fun summarizeSpeechText(speechText: String): String = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🎤 FirebaseAiService: Processing speech text of length: ${speechText.length}")
+
+        try {
+            // Ensure user is authenticated
+            if (!ensureAuthenticated()) {
+                Log.w(TAG, "⚠️ FirebaseAiService: Authentication failed, using fallback")
+                return@withContext generateSpeechFallback(speechText)
+            }
+
+            val prompt = buildSpeechSummaryPrompt(speechText)
+            Log.d(TAG, "📋 FirebaseAiService: Generated speech summary prompt")
+
+            val response = generativeModel.generateContent(prompt)
+            val summary = response.text ?: generateSpeechFallback(speechText)
+
+            Log.d(TAG, "✅ FirebaseAiService: Speech summary generated successfully")
+            Log.d(TAG, "📊 FirebaseAiService: Summary length: ${summary.length} characters")
+
+            return@withContext summary
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FirebaseAiService: Error summarizing speech text", e)
+            return@withContext generateSpeechFallback(speechText)
+        }
+    }
+
+    /**
+     * Build a comprehensive prompt for summarizing speech text.
+     *
+     * @param speechText The recognized speech text
+     * @return Formatted prompt for the AI model
+     */
+    private fun buildSpeechSummaryPrompt(speechText: String): String {
+        return """
+        Please analyze and summarize the following speech text. The text was recognized from voice input and may contain some recognition errors or incomplete sentences.
+
+        Speech Text:
+        "$speechText"
+
+        Please provide a comprehensive summary that:
+        1. Identifies the main topics and key points discussed
+        2. Organizes the information in a logical structure
+        3. Highlights important details and insights
+        4. Corrects any obvious speech recognition errors if possible
+        5. Maintains the original intent and meaning
+        6. Is written in clear, professional language
+
+        If the speech text appears to be incomplete or unclear, please note that in your summary and work with what's available.
+
+        Summary:
+        """.trimIndent()
+    }
+
+    /**
+     * Generate a fallback summary when AI service is unavailable.
+     *
+     * @param speechText The recognized speech text
+     * @return Basic fallback summary
+     */
+    private fun generateSpeechFallback(speechText: String): String {
+        val wordCount = speechText.split("\\s+".toRegex()).size
+        return """
+        Speech Recognition Summary:
+        
+        Text Length: ${speechText.length} characters
+        Word Count: $wordCount words
+        
+        Recognized Text:
+        "$speechText"
+        
+        Note: This is a basic summary as the AI service is currently unavailable. The full AI analysis will be available when the service is restored.
+        """.trimIndent()
+    }
+
+    /**
      * Build a comprehensive prompt for summarizing YouTube transcripts.
      *
      * @param transcript The raw transcript text
