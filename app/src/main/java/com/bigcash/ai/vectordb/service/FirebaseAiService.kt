@@ -471,6 +471,190 @@ class FirebaseAiService(private val context: Context) {
     }
 
     /**
+     * Generate AI response for generic chat queries.
+     * This function handles general conversations without document context.
+     *
+     * @param userQuery The user's natural language question/query
+     * @return AI-generated response for general chat
+     */
+    suspend fun generateGenericResponse(userQuery: String): String = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🤖 FirebaseAiService: Generating generic response")
+        Log.d(TAG, "📝 FirebaseAiService: User query: '$userQuery'")
+
+        try {
+            val prompt = buildGenericPrompt(userQuery)
+            Log.d(TAG, "📋 FirebaseAiService: Generated generic prompt length: ${prompt.length}")
+
+            val response = generativeModel.generateContent(prompt)
+            val responseText = response.text ?: "I couldn't generate a response at this time."
+
+            Log.d(TAG, "✅ FirebaseAiService: Generic response generated successfully")
+            Log.d(TAG, "📊 FirebaseAiService: Response length: ${responseText.length}")
+
+            return@withContext responseText
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FirebaseAiService: Error generating generic response", e)
+            return@withContext "I encountered an error while processing your request. Please try again."
+        }
+    }
+
+    /**
+     * Generate YouTube video summary from URL.
+     * This function extracts video ID from YouTube URL and generates a summary.
+     *
+     * @param youtubeUrl The YouTube URL
+     * @return AI-generated video summary
+     */
+    suspend fun generateYouTubeSummary(youtubeUrl: String): String = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🎥 FirebaseAiService: Generating YouTube video summary")
+        Log.d(TAG, "🔗 FirebaseAiService: YouTube URL: '$youtubeUrl'")
+
+        try {
+            val videoId = extractVideoId(youtubeUrl)
+            if (videoId == null) {
+                Log.w(TAG, "⚠️ FirebaseAiService: Invalid YouTube URL format")
+                return@withContext "I couldn't extract a valid video ID from that YouTube URL. Please make sure it's a proper YouTube link."
+            }
+
+            val watchUrl = "https://www.youtube.com/watch?v=$videoId"
+            Log.d(TAG, "🎬 FirebaseAiService: Watch URL: '$watchUrl'")
+
+            val prompt = buildYouTubePrompt(watchUrl)
+            Log.d(TAG, "📋 FirebaseAiService: Generated YouTube prompt length: ${prompt.length}")
+
+            val response = generativeModel.generateContent(prompt)
+            val responseText = response.text ?: "I couldn't generate a summary for this video at this time."
+
+            Log.d(TAG, "✅ FirebaseAiService: YouTube summary generated successfully")
+            Log.d(TAG, "📊 FirebaseAiService: Summary length: ${responseText.length}")
+
+            return@withContext responseText
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FirebaseAiService: Error generating YouTube summary", e)
+            return@withContext "I encountered an error while generating the video summary. Please try again."
+        }
+    }
+
+    /**
+     * Extract video ID from YouTube URL.
+     *
+     * @param url YouTube URL
+     * @return Video ID or null if invalid
+     */
+    private fun extractVideoId(url: String): String? {
+        val patterns = listOf(
+            "youtube\\.com/watch\\?v=([^&]+)",
+            "youtu\\.be/([^?]+)",
+            "youtube\\.com/embed/([^?]+)",
+            "youtube\\.com/v/([^?]+)"
+        )
+        
+        for (pattern in patterns) {
+            val regex = Regex(pattern)
+            val match = regex.find(url)
+            if (match != null) {
+                return match.groupValues[1]
+            }
+        }
+        return null
+    }
+
+    /**
+     * Check if the given text contains a YouTube URL.
+     *
+     * @param text Input text to check
+     * @return True if contains YouTube URL, false otherwise
+     */
+    fun isYouTubeUrl(text: String): Boolean {
+        val youtubePatterns = listOf(
+            "youtube\\.com/watch",
+            "youtu\\.be/",
+            "youtube\\.com/embed",
+            "youtube\\.com/v/"
+        )
+        
+        return youtubePatterns.any { pattern ->
+            text.contains(Regex(pattern, RegexOption.IGNORE_CASE))
+        }
+    }
+
+    /**
+     * Build a generic prompt for general chat conversations.
+     *
+     * @param userQuery The user's question
+     * @return Formatted prompt for general chat
+     */
+    private fun buildGenericPrompt(userQuery: String): String {
+        return """
+        You are a helpful AI assistant. The user is asking: "$userQuery"
+        
+        Please provide a helpful, informative, and conversational response. Be friendly and engaging while being accurate and helpful.
+        
+        Guidelines:
+        - Answer questions clearly and concisely
+        - If you don't know something, say so honestly
+        - Use markdown formatting for better readability when appropriate
+        - Be conversational and friendly
+        - Provide examples when helpful
+        - If the question is about technical topics, explain in a way that's easy to understand
+        
+        Format your response using markdown:
+        - Use **bold** for important points
+        - Use *italics* for emphasis
+        - Use bullet points (-) for lists
+        - Use numbered lists (1., 2., etc.) for step-by-step instructions
+        - Use > blockquotes for important information
+        - Use ## headings for major sections when organizing complex information
+        """.trimIndent()
+    }
+
+    /**
+     * Build a prompt for YouTube video summarization.
+     *
+     * @param watchUrl The YouTube watch URL
+     * @return Formatted prompt for video summarization
+     */
+    private fun buildYouTubePrompt(watchUrl: String): String {
+        return """
+        You are an AI assistant that can analyze YouTube videos. The user has shared this YouTube video: $watchUrl
+        
+        Please provide a comprehensive summary of this video including:
+        
+        ## Video Summary
+        
+        **Title:** [Extract or infer the video title]
+        
+        **Main Topics Covered:**
+        - [List the main topics discussed]
+        
+        **Key Points:**
+        - [Highlight the most important points]
+        
+        **Duration:** [If you can determine the length]
+        
+        **Content Type:** [Educational, Entertainment, Tutorial, Review, etc.]
+        
+        **Summary:**
+        [Provide a detailed summary of what the video covers, main arguments, conclusions, or key takeaways]
+        
+        **Key Takeaways:**
+        - [List 3-5 main takeaways from the video]
+        
+        **Who Should Watch:**
+        [Describe the target audience or who would benefit from watching this video]
+        
+        **Overall Assessment:**
+        [Brief assessment of the video's value, quality, or relevance]
+        
+        Note: Since I cannot actually watch the video, this summary is based on the URL and any available metadata. For the most accurate summary, the user would need to watch the video themselves.
+        
+        Format the response using markdown for better readability.
+        """.trimIndent()
+    }
+
+    /**
      * Generate AI response based on user query and retrieved document data.
      * This function takes a user's natural language query and relevant document content
      * to generate a contextual response using Firebase AI.

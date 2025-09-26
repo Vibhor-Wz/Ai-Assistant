@@ -59,7 +59,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun addWelcomeMessage() {
         val welcomeMessage = ChatMessage(
-            text = "Hello! I'm your AI assistant. I can help you search through your documents using natural language queries. Try asking me something like 'What documents do I have about machine learning?'",
+            text = "Hello! I'm your AI assistant. I can help you with:\n\n• **General conversations** - Ask me anything!\n• **Document search** - Search through your uploaded documents\n• **YouTube video summaries** - Share a YouTube URL and I'll provide a summary\n\nTry asking me something like 'What's the weather like?' or share a YouTube video link!",
             isUser = false,
             timestamp = System.currentTimeMillis(),
             pdfEntity = null,
@@ -93,39 +93,59 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _messages.value = _messages.value + userMessage
         Log.d(TAG, "✅ ChatViewModel: User message added to chat")
         
-        // Generate AI response with bridge analysis
+        // Generate AI response based on message type
         viewModelScope.launch {
             try {
                 Log.d(TAG, "🤖 ChatViewModel: Starting AI response generation")
-                val aiResponseWithResults = generateAIResponse(message)
-                Log.d(TAG, "📝 ChatViewModel: AI response generated, length: ${aiResponseWithResults.response.length}")
-
-                // Use ResponseBridge to analyze and decide what to return
-                Log.d(TAG, "🌉 ChatViewModel: Analyzing response with ResponseBridge")
-                val bridgeResult = responseBridge.analyzeResponse(
-                    aiResponse = aiResponseWithResults.response,
-                    searchResults = aiResponseWithResults.searchResults,
-                    userQuery = message
-                )
                 
-                // Log the bridge decision for testing
-                Log.d(TAG, "🌉 ChatViewModel: Bridge Decision:")
-                Log.d(TAG, "   📊 Type: ${bridgeResult.responseType}")
-                Log.d(TAG, "   🎯 Confidence: ${bridgeResult.confidence}")
-                Log.d(TAG, "   📁 File: ${bridgeResult.file?.name ?: "None"}")
-                Log.d(TAG, "   📄 PDF Entity: ${bridgeResult.pdfEntity?.name ?: "None"}")
-                Log.d(TAG, "   📝 Content length: ${bridgeResult.content.length}")
+                val (response, pdfEntity, file) = when {
+                    // Check if message contains YouTube URL
+                    firebaseAiService.isYouTubeUrl(message) -> {
+                        Log.d(TAG, "🎥 ChatViewModel: Detected YouTube URL, generating video summary")
+                        Triple(firebaseAiService.generateYouTubeSummary(message), null, null)
+                    }
+                    // Check if message is asking about documents (contains keywords like "document", "file", "search", etc.)
+                    isDocumentQuery(message) -> {
+                        Log.d(TAG, "📄 ChatViewModel: Detected document query, using document search")
+                        val aiResponseWithResults = generateAIResponse(message)
+                        
+                        // Use ResponseBridge to analyze and decide what to return
+                        Log.d(TAG, "🌉 ChatViewModel: Analyzing response with ResponseBridge")
+                        val bridgeResult = responseBridge.analyzeResponse(
+                            aiResponse = aiResponseWithResults.response,
+                            searchResults = aiResponseWithResults.searchResults,
+                            userQuery = message
+                        )
+                        
+                        // Log the bridge decision for testing
+                        Log.d(TAG, "🌉 ChatViewModel: Bridge Decision:")
+                        Log.d(TAG, "   📊 Type: ${bridgeResult.responseType}")
+                        Log.d(TAG, "   🎯 Confidence: ${bridgeResult.confidence}")
+                        Log.d(TAG, "   📁 File: ${bridgeResult.file?.name ?: "None"}")
+                        Log.d(TAG, "   📄 PDF Entity: ${bridgeResult.pdfEntity?.name ?: "None"}")
+                        Log.d(TAG, "   📝 Content length: ${bridgeResult.content.length}")
+                        
+                        Triple(bridgeResult.content, bridgeResult.pdfEntity, bridgeResult.file)
+                    }
+                    // Default to generic chat
+                    else -> {
+                        Log.d(TAG, "💬 ChatViewModel: Using generic chat response")
+                        Triple(firebaseAiService.generateGenericResponse(message), null, null)
+                    }
+                }
+                
+                Log.d(TAG, "📝 ChatViewModel: AI response generated, length: ${response.length}")
 
                 val aiMessage = ChatMessage(
-                    text = bridgeResult.content,
+                    text = response,
                     isUser = false,
                     timestamp = System.currentTimeMillis(),
-                    pdfEntity = bridgeResult.pdfEntity,
-                    file = bridgeResult.file
+                    pdfEntity = pdfEntity,
+                    file = file
                 )
                 
                 _messages.value = _messages.value + aiMessage
-                Log.d(TAG, "✅ ChatViewModel: AI message added to chat with file info: ${aiMessage.pdfEntity != null || aiMessage.file != null}")
+                Log.d(TAG, "✅ ChatViewModel: AI message added to chat")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ ChatViewModel: Error generating AI response", e)
@@ -148,6 +168,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
+    /**
+     * Check if the query is related to document search.
+     * 
+     * @param query The user's query
+     * @return True if the query is about documents, false otherwise
+     */
+    private fun isDocumentQuery(query: String): Boolean {
+        val documentKeywords = listOf(
+            "document", "documents", "file", "files", "pdf", "upload", "uploaded",
+            "search", "find", "show me", "my", "have", "contains", "about",
+            "pan", "aadhaar", "passport", "license", "certificate", "statement",
+            "bank", "card", "id", "identity", "proof", "documentation"
+        )
+        
+        val queryLower = query.lowercase()
+        return documentKeywords.any { keyword ->
+            queryLower.contains(keyword)
+        }
+    }
+
     /**
      * Generate AI response for a given query using vector search and Firebase AI.
      * 
