@@ -675,8 +675,9 @@ class FirebaseAiService(private val context: Context) {
             val prompt = buildSpeechSummaryPrompt(speechText)
             Log.d(TAG, "📋 FirebaseAiService: Generated speech summary prompt")
 
-            val response = generativeModel.generateContent(prompt)
-            val summary = response.text ?: generateSpeechFallback(speechText)
+//            val response = generativeModel.generateContent(prompt)
+//            val summary = response.text ?: generateSpeechFallback(speechText)
+            val summary = "testRatnesh123InFirebaseAi enable to actual summmary"
 
             Log.d(TAG, "✅ FirebaseAiService: Speech summary generated successfully")
             Log.d(TAG, "📊 FirebaseAiService: Summary length: ${summary.length} characters")

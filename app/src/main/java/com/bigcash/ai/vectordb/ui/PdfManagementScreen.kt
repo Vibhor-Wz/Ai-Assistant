@@ -81,6 +81,7 @@ fun PdfManagementScreen(
     val isGeneratingSpeechSummary by viewModel.isGeneratingSpeechSummary.collectAsStateWithLifecycle()
     val speechSummaryText by viewModel.speechSummaryText.collectAsStateWithLifecycle()
     val speechError by viewModel.speechError.collectAsStateWithLifecycle()
+    val isContinuousMode by viewModel.isContinuousMode.collectAsStateWithLifecycle()
 
     // UI State
     var pdfName by remember { mutableStateOf("") }
@@ -102,7 +103,7 @@ fun PdfManagementScreen(
     ) { isGranted ->
         if (isGranted) {
             Log.d("PdfManagementScreen", "✅ Microphone permission granted")
-            viewModel.startSpeechRecognition()
+            viewModel.startContinuousSpeechRecognition()
         } else {
             Log.w("PdfManagementScreen", "❌ Microphone permission denied")
             // Error will be handled by ViewModel
@@ -163,12 +164,12 @@ fun PdfManagementScreen(
         }
     }
 
-    // Handle speech recognition results
-    LaunchedEffect(recognizedText, speechSummaryText, speechError) {
-        when {
-            speechSummaryText.isNotEmpty() -> {
-                showSpeechSummaryDialog = true
-            }
+    // Handle speech recognition results - show dialog when summary is ready
+    LaunchedEffect(speechSummaryText, isRecognizingSpeech) {
+        Log.d("PdfManagementScreen", "📱 LaunchedEffect triggered - speechSummaryText: '${speechSummaryText}', isRecognizingSpeech: $isRecognizingSpeech")
+        if (speechSummaryText.isNotEmpty() && !isRecognizingSpeech) {
+            Log.d("PdfManagementScreen", "📱 Showing speech summary dialog")
+            showSpeechSummaryDialog = true
         }
     }
 
@@ -285,22 +286,48 @@ fun PdfManagementScreen(
                         Text("YouTube Transcript")
                     }
 
+                    // Toggle Speech Recognition Button
                     Button(
                         onClick = {
-                            if (viewModel.hasRecordAudioPermission()) {
-                                viewModel.startSpeechRecognition()
+                            if (isRecognizingSpeech && isContinuousMode) {
+                                // Currently listening - force stop to prevent restarts
+                                Log.d("PdfManagementScreen", "🛑 Force stopping speech recognition")
+                                viewModel.forceStopSpeechRecognition()
                             } else {
-                                Log.d("PdfManagementScreen", "🎤 Requesting microphone permission")
-                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                // Not listening - start
+                                if (viewModel.hasRecordAudioPermission()) {
+                                    Log.d("PdfManagementScreen", "▶️ Starting continuous speech recognition")
+                                    viewModel.startContinuousSpeechRecognition()
+                                } else {
+                                    Log.d("PdfManagementScreen", "🎤 Requesting microphone permission")
+                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading && !isRecognizingSpeech && !isGeneratingSpeechSummary
+                        enabled = !isLoading && !isGeneratingSpeechSummary,
+                        colors = if (isRecognizingSpeech && isContinuousMode) {
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError
+                            )
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     ) {
-                        Icon(Icons.Filled.Create, contentDescription = "Voice Recognition")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Voice Recognition")
+                        if (isRecognizingSpeech && isContinuousMode) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Stop Recording")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Stop Recording")
+                        } else {
+                            Icon(Icons.Filled.Add, contentDescription = "Start Recording")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Start Recording")
+                        }
                     }
+
 
                 // Speech recognition status indicator
                 if (isRecognizingSpeech || isGeneratingSpeechSummary) {
@@ -318,7 +345,7 @@ fun PdfManagementScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Listening...",
+                                text = if (isContinuousMode) "Listening continuously..." else "Listening...",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -512,10 +539,14 @@ fun PdfManagementScreen(
             error = speechError,
             onDismiss = {
                 showSpeechSummaryDialog = false
+            },
+            onClear = {
                 viewModel.clearSpeechData()
+                showSpeechSummaryDialog = false
             }
         )
     }
+
 }
 
 /**
@@ -814,33 +845,48 @@ fun SpeechSummaryDialog(
     summary: String,
     isLoading: Boolean,
     error: String?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onClear: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Voice Recognition Summary") },
-        text = {
-            Column {
-                if (recognizedText.isNotEmpty()) {
-                    Text(
-                        text = "Recognized Text:",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = recognizedText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(8.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+        title = { 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Voice Recognition Summary")
+                TextButton(onClick = onClear) {
+                    Text("Clear")
                 }
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 500.dp)
+            ) {
+                item {
+                    if (recognizedText.isNotEmpty()) {
+                        Text(
+                            text = "Recognized Text:",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = recognizedText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(12.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                 
                 if (error != null) {
                     Text(
@@ -881,6 +927,7 @@ fun SpeechSummaryDialog(
                             .padding(8.dp)
                     )
                 }
+            }
             }
         },
         confirmButton = {

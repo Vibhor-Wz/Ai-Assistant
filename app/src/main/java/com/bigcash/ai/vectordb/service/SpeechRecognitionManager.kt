@@ -30,6 +30,8 @@ class SpeechRecognitionManager(
     private var speechRecognizer: SpeechRecognizer? = null
     private var recognizerIntent: Intent? = null
     private var isListening = false
+    private var isContinuousMode = false
+    private var isManuallyStopped = false
     
     init {
         Log.d(TAG, "🎤 SpeechRecognitionManager: Initializing speech recognition manager")
@@ -71,6 +73,7 @@ class SpeechRecognitionManager(
         }
     }
     
+
     /**
      * Create the RecognitionListener for handling speech recognition events.
      */
@@ -98,14 +101,72 @@ class SpeechRecognitionManager(
             override fun onEndOfSpeech() {
                 Log.d(TAG, "🎤 SpeechRecognitionManager: End of speech detected")
                 isListening = false
+                
+                // In continuous mode, restart listening after a short delay
+                if (isContinuousMode && !isManuallyStopped) {
+                    Log.d(TAG, "🔄 SpeechRecognitionManager: End of speech in continuous mode - restarting")
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        if (isContinuousMode && !isListening && !isManuallyStopped) {
+                            RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS
+                            Log.d(TAG, "🔄 SpeechRecognitionManager: Restarting after end of speech")
+                            startListeningInternal()
+                        }
+                    }, 2000) // 2 second delay for more stability
+                }
             }
             
             override fun onError(error: Int) {
                 isListening = false
                 val errorMessage = getErrorMessage(error)
                 Log.e(TAG, "❌ SpeechRecognitionManager: Recognition error: $error - $errorMessage")
-                onError(errorMessage)
-                onEnd()
+                
+                // Handle specific errors in continuous mode - be more conservative
+                when (error) {
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                        Log.d(TAG, "🔄 SpeechRecognitionManager: Speech timeout - restarting in continuous mode")
+                        if (isContinuousMode && !isManuallyStopped) {
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                if (isContinuousMode && !isListening && !isManuallyStopped) {
+                                    Log.d(TAG, "🔄 SpeechRecognitionManager: Restarting after timeout")
+                                    startListeningInternal()
+                                }
+                            }, 3000) // 3 second delay for more stability
+                            return
+                        }
+                    }
+                    SpeechRecognizer.ERROR_NO_MATCH -> {
+                        Log.d(TAG, "🔄 SpeechRecognitionManager: No match - this is normal in continuous mode, restarting")
+                        if (isContinuousMode && !isManuallyStopped) {
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                if (isContinuousMode && !isListening && !isManuallyStopped) {
+                                    Log.d(TAG, "🔄 SpeechRecognitionManager: Restarting after no match")
+                                    startListeningInternal()
+                                }
+                            }, 2000) // 2 second delay for no match (shorter since it's normal)
+                            return
+                        }
+                    }
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
+                        Log.d(TAG, "🔄 SpeechRecognitionManager: Recognizer busy - restarting in continuous mode")
+                        if (isContinuousMode && !isManuallyStopped) {
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                if (isContinuousMode && !isListening && !isManuallyStopped) {
+                                    Log.d(TAG, "🔄 SpeechRecognitionManager: Restarting after busy")
+                                    startListeningInternal()
+                                }
+                            }, 5000) // 5 second delay for busy state
+                            return
+                        }
+                    }
+                }
+                
+                // Only call onError for critical errors, not for normal continuous mode cycles
+                if (!isContinuousMode) {
+                    onError(errorMessage)
+                    onEnd()
+                } else {
+                    Log.d(TAG, "🔄 SpeechRecognitionManager: Ignoring error in continuous mode - will restart")
+                }
             }
             
             override fun onResults(results: Bundle?) {
@@ -118,10 +179,23 @@ class SpeechRecognitionManager(
                     Log.d(TAG, "✅ SpeechRecognitionManager: Recognized text: '$recognizedText'")
                     onResult(recognizedText)
                 } else {
-                    Log.w(TAG, "⚠️ SpeechRecognitionManager: No recognition results found")
-                    onError("No speech was recognized")
+                    Log.w(TAG, "⚠️ SpeechRecognitionManager: No recognition results found in this cycle")
+                    // In continuous mode, just restart without calling onError
+                    // This is normal - some cycles might not have speech
                 }
-                onEnd()
+                
+                // If in continuous mode, restart listening automatically
+                if (isContinuousMode && !isManuallyStopped) {
+                    Log.d(TAG, "🔄 SpeechRecognitionManager: Continuous mode - restarting listening")
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        if (isContinuousMode && !isListening && !isManuallyStopped) {
+                            Log.d(TAG, "🔄 SpeechRecognitionManager: Restarting after results")
+                            startListeningInternal()
+                        }
+                    }, 1000) // 1 second delay for more stability
+                } else {
+                    onEnd()
+                }
             }
             
             override fun onPartialResults(partialResults: Bundle?) {
@@ -138,11 +212,11 @@ class SpeechRecognitionManager(
     }
     
     /**
-     * Start speech recognition.
+     * Start continuous speech recognition.
      */
-    fun startListening() {
+    fun startContinuousListening() {
         try {
-            Log.d(TAG, "🎤 SpeechRecognitionManager: Starting speech recognition")
+            Log.d(TAG, "🎤 SpeechRecognitionManager: Starting continuous speech recognition")
             
             if (isListening) {
                 Log.w(TAG, "⚠️ SpeechRecognitionManager: Already listening, ignoring start request")
@@ -152,6 +226,58 @@ class SpeechRecognitionManager(
             if (!hasRecordAudioPermission()) {
                 Log.e(TAG, "❌ SpeechRecognitionManager: RECORD_AUDIO permission not granted")
                 onError("Microphone permission is required for speech recognition")
+                return
+            }
+            
+            isContinuousMode = true
+            isManuallyStopped = false
+            startListeningInternal()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ SpeechRecognitionManager: Error starting continuous speech recognition", e)
+            onError("Failed to start continuous speech recognition: ${e.message}")
+            onEnd()
+        }
+    }
+
+    /**
+     * Start single speech recognition.
+     */
+    fun startListening() {
+        try {
+            Log.d(TAG, "🎤 SpeechRecognitionManager: Starting single speech recognition")
+            
+            if (isListening) {
+                Log.w(TAG, "⚠️ SpeechRecognitionManager: Already listening, ignoring start request")
+                return
+            }
+            
+            if (!hasRecordAudioPermission()) {
+                Log.e(TAG, "❌ SpeechRecognitionManager: RECORD_AUDIO permission not granted")
+                onError("Microphone permission is required for speech recognition")
+                return
+            }
+            
+            isContinuousMode = false
+            isManuallyStopped = false
+            startListeningInternal()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ SpeechRecognitionManager: Error starting speech recognition", e)
+            onError("Failed to start speech recognition: ${e.message}")
+            onEnd()
+        }
+    }
+
+    /**
+     * Internal method to start listening.
+     */
+    private fun startListeningInternal() {
+        try {
+            Log.d(TAG, "🎤 SpeechRecognitionManager: Starting speech recognition internally")
+            
+            if (isListening) {
+                Log.w(TAG, "⚠️ SpeechRecognitionManager: Already listening, ignoring start request")
                 return
             }
             
@@ -185,9 +311,10 @@ class SpeechRecognitionManager(
             Log.d(TAG, "🎤 SpeechRecognitionManager: Stopping speech recognition")
             
             if (isListening) {
-
                 speechRecognizer?.stopListening()
                 isListening = false
+                isContinuousMode = false
+                isManuallyStopped = true
                 Log.d(TAG, "✅ SpeechRecognitionManager: Speech recognition stopped")
             } else {
                 Log.w(TAG, "⚠️ SpeechRecognitionManager: Not currently listening")
@@ -197,6 +324,34 @@ class SpeechRecognitionManager(
             Log.e(TAG, "❌ SpeechRecognitionManager: Error stopping speech recognition", e)
         }
     }
+
+    /**
+     * Stop continuous listening mode.
+     */
+    fun stopContinuousListening() {
+        try {
+            Log.d(TAG, "🎤 SpeechRecognitionManager: Stopping continuous listening mode")
+            isContinuousMode = false
+            isManuallyStopped = true
+            
+            if (isListening) {
+                speechRecognizer?.stopListening()
+                isListening = false
+            }
+            
+            Log.d(TAG, "✅ SpeechRecognitionManager: Continuous listening stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ SpeechRecognitionManager: Error stopping continuous listening", e)
+        }
+    }
+
+    /**
+     * Check if we should restart listening.
+     */
+    private fun shouldRestart(): Boolean {
+        return isContinuousMode && !isListening && !isManuallyStopped
+    }
+
     
     /**
      * Cancel speech recognition.
@@ -224,6 +379,13 @@ class SpeechRecognitionManager(
     fun isListening(): Boolean {
         return isListening
     }
+
+    /**
+     * Check if in continuous mode.
+     */
+    fun isInContinuousMode(): Boolean {
+        return isContinuousMode
+    }
     
     /**
      * Check if speech recognition is available on the device.
@@ -248,6 +410,7 @@ class SpeechRecognitionManager(
     fun getRequiredPermission(): String {
         return android.Manifest.permission.RECORD_AUDIO
     }
+
     
     /**
      * Get human-readable error message from error code.
@@ -273,6 +436,9 @@ class SpeechRecognitionManager(
     fun cleanup() {
         try {
             Log.d(TAG, "🧹 SpeechRecognitionManager: Cleaning up resources")
+            
+            isContinuousMode = false
+            isManuallyStopped = true
             
             if (isListening) {
                 cancelListening()

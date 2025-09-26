@@ -76,6 +76,10 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _speechError = MutableStateFlow<String?>(null)
     val speechError: StateFlow<String?> = _speechError.asStateFlow()
 
+    // Continuous speech recognition state
+    private val _isContinuousMode = MutableStateFlow(false)
+    val isContinuousMode: StateFlow<Boolean> = _isContinuousMode.asStateFlow()
+
     init {
         Log.d(TAG, "🚀 PdfViewModel: Initializing ViewModel")
         loadAllPdfs()
@@ -356,13 +360,31 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             speechRecognitionManager = SpeechRecognitionManager(
                 context = getApplication(),
                 onResult = { recognizedText ->
-                    Log.d(TAG, "🎤 PdfViewModel: Speech recognition result received")
-                    processRecognizedSpeech(recognizedText)
+                    Log.d(TAG, "🎤 PdfViewModel: Speech recognized: '$recognizedText'")
+                    // Only process non-empty text
+                    if (recognizedText.isNotEmpty()) {
+                        // Accumulate text in continuous mode
+                        if (_isContinuousMode.value) {
+                            val currentText = _recognizedText.value
+                            _recognizedText.value = if (currentText.isEmpty()) {
+                                recognizedText
+                            } else {
+                                "$currentText $recognizedText"
+                            }
+                            Log.d(TAG, "📝 PdfViewModel: Accumulated text: '${_recognizedText.value}'")
+                        } else {
+                            _recognizedText.value = recognizedText
+                            processRecognizedSpeech(recognizedText)
+                        }
+                    } else {
+                        Log.d(TAG, "📝 PdfViewModel: Empty recognized text - skipping")
+                    }
                 },
                 onError = { error ->
                     Log.e(TAG, "❌ PdfViewModel: Speech recognition error: $error")
                     _speechError.value = error
                     _isRecognizingSpeech.value = false
+                    // Don't reset continuous mode on error, let it handle restart
                 },
                 onStart = {
                     Log.d(TAG, "🎤 PdfViewModel: Speech recognition started")
@@ -372,6 +394,10 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
                 onEnd = {
                     Log.d(TAG, "🎤 PdfViewModel: Speech recognition ended")
                     _isRecognizingSpeech.value = false
+                    // Only reset continuous mode if manually stopped
+                    if (!_isContinuousMode.value) {
+                        _isContinuousMode.value = false
+                    }
                 }
             )
             
@@ -384,11 +410,58 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Start speech recognition.
+     * Start continuous speech recognition.
+     */
+    fun startContinuousSpeechRecognition() {
+        try {
+            Log.d(TAG, "🎤 PdfViewModel: Starting continuous speech recognition")
+            
+            if (speechRecognitionManager == null) {
+                Log.e(TAG, "❌ PdfViewModel: Speech recognition not initialized")
+                _speechError.value = "Speech recognition not initialized"
+                return
+            }
+            
+            if (!speechRecognitionManager!!.isRecognitionAvailable()) {
+                Log.e(TAG, "❌ PdfViewModel: Speech recognition not available on device")
+                _speechError.value = "Speech recognition not available on this device"
+                return
+            }
+            
+            if (!hasRecordAudioPermission()) {
+                Log.e(TAG, "❌ PdfViewModel: RECORD_AUDIO permission not granted")
+                _speechError.value = "Microphone permission is required for speech recognition. Please grant the permission in Settings."
+                return
+            }
+            
+            
+            if (speechRecognitionManager!!.isListening()) {
+                Log.w(TAG, "⚠️ PdfViewModel: Already listening, ignoring start request")
+                return
+            }
+            
+            _speechError.value = null
+            _recognizedText.value = ""
+            _speechSummaryText.value = ""
+            _isContinuousMode.value = true
+            
+            speechRecognitionManager!!.startContinuousListening()
+            Log.d(TAG, "✅ PdfViewModel: Continuous speech recognition started successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ PdfViewModel: Error starting continuous speech recognition", e)
+            _speechError.value = "Failed to start continuous speech recognition: ${e.message}"
+            _isRecognizingSpeech.value = false
+            _isContinuousMode.value = false
+        }
+    }
+
+    /**
+     * Start single speech recognition.
      */
     fun startSpeechRecognition() {
         try {
-            Log.d(TAG, "🎤 PdfViewModel: Starting speech recognition")
+            Log.d(TAG, "🎤 PdfViewModel: Starting single speech recognition")
             
             if (speechRecognitionManager == null) {
                 Log.e(TAG, "❌ PdfViewModel: Speech recognition not initialized")
@@ -416,6 +489,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             _speechError.value = null
             _recognizedText.value = ""
             _speechSummaryText.value = ""
+            _isContinuousMode.value = false
             
             speechRecognitionManager!!.startListening()
             Log.d(TAG, "✅ PdfViewModel: Speech recognition started successfully")
@@ -434,7 +508,27 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun stopSpeechRecognition() {
         try {
             Log.d(TAG, "🛑 PdfViewModel: Stopping speech recognition")
-            speechRecognitionManager?.stopListening()
+            
+            // Reset continuous mode first
+            _isContinuousMode.value = false
+            
+            if (speechRecognitionManager?.isInContinuousMode() == true) {
+                Log.d(TAG, "🛑 PdfViewModel: Stopping continuous speech recognition")
+                speechRecognitionManager?.stopContinuousListening()
+                
+                // Generate summary from accumulated text
+                val accumulatedText = _recognizedText.value
+                Log.d(TAG, "📝 PdfViewModel: Accumulated text length: ${accumulatedText.length}")
+                if (accumulatedText.isNotEmpty()) {
+                    Log.d(TAG, "📝 PdfViewModel: Generating summary for accumulated text: '$accumulatedText'")
+                    processRecognizedSpeech(accumulatedText)
+                } else {
+                    Log.w(TAG, "⚠️ PdfViewModel: No accumulated text to summarize")
+                }
+            } else {
+                speechRecognitionManager?.stopListening()
+            }
+            
             Log.d(TAG, "✅ PdfViewModel: Speech recognition stopped")
         } catch (e: Exception) {
             Log.e(TAG, "❌ PdfViewModel: Error stopping speech recognition", e)
@@ -460,8 +554,8 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun processRecognizedSpeech(recognizedText: String) {
         viewModelScope.launch {
-            Log.d(TAG, "🎤 PdfViewModel: Processing recognized speech text")
-            _recognizedText.value = recognizedText
+            Log.d(TAG, "🎤 PdfViewModel: Processing recognized speech text: '$recognizedText'")
+            // Don't overwrite _recognizedText here as it might already contain accumulated text
             _isGeneratingSpeechSummary.value = true
             _speechError.value = null
             _speechSummaryText.value = ""
@@ -481,16 +575,6 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Clear speech recognition data.
-     */
-    fun clearSpeechData() {
-        _recognizedText.value = ""
-        _speechSummaryText.value = ""
-        _speechError.value = null
-        _isRecognizingSpeech.value = false
-        _isGeneratingSpeechSummary.value = false
-    }
 
     /**
      * Set speech recognition loading state.
@@ -518,6 +602,48 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun isSpeechRecognitionLoading(): Boolean {
         return _isRecognizingSpeech.value || _isGeneratingSpeechSummary.value
+    }
+
+    /**
+     * Clear speech recognition data.
+     */
+    fun clearSpeechData() {
+        Log.d(TAG, "🧹 PdfViewModel: Clearing speech data")
+        _recognizedText.value = ""
+        _speechSummaryText.value = ""
+        _speechError.value = null
+        _isContinuousMode.value = false
+        _isRecognizingSpeech.value = false
+    }
+
+    /**
+     * Force stop speech recognition and prevent restarts.
+     */
+    fun forceStopSpeechRecognition() {
+        try {
+            Log.d(TAG, "🛑 PdfViewModel: Force stopping speech recognition")
+            
+            // Reset all states immediately
+            _isContinuousMode.value = false
+            _isRecognizingSpeech.value = false
+            
+            // Stop the recognizer
+            speechRecognitionManager?.stopContinuousListening()
+            
+            // Generate summary from accumulated text
+            val accumulatedText = _recognizedText.value
+            Log.d(TAG, "📝 PdfViewModel: Force stop - accumulated text length: ${accumulatedText.length}")
+            if (accumulatedText.isNotEmpty()) {
+                Log.d(TAG, "📝 PdfViewModel: Force stop - generating summary for accumulated text: '$accumulatedText'")
+                processRecognizedSpeech(accumulatedText)
+            } else {
+                Log.w(TAG, "⚠️ PdfViewModel: Force stop - no accumulated text to summarize")
+            }
+            
+            Log.d(TAG, "✅ PdfViewModel: Speech recognition force stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ PdfViewModel: Error force stopping speech recognition", e)
+        }
     }
 
     /**
