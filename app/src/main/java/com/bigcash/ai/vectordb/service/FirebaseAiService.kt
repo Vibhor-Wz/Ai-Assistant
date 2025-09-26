@@ -224,6 +224,7 @@ class FirebaseAiService(private val context: Context) {
             FileType.PDF -> createPdfPrompt(fileName, fileData)
             FileType.IMAGE -> createImagePrompt(fileName, fileData)
             FileType.DOCUMENT -> createDocumentPrompt(fileName, fileData)
+            FileType.AUDIO -> createAudioPrompt(fileName, fileData)
             FileType.UNSUPPORTED -> createGenericPrompt(fileName, fileData)
         }
     }
@@ -394,6 +395,67 @@ class FirebaseAiService(private val context: Context) {
     """.trimIndent()
     }
 
+    /**
+     * Create prompt for audio files.
+     */
+    private fun createAudioPrompt(fileName: String, fileData: ByteArray): String {
+        val fileSize = fileData.size
+        Log.d(TAG, "🎵 Creating audio prompt for file: $fileName")
+        Log.d(TAG, "📊 Audio file size: $fileSize bytes")
+
+        return """
+        You are an AI assistant specialized in processing audio files and generating comprehensive summaries.
+
+        File Information:
+        - Name: $fileName
+        - Size: ${fileSize} bytes
+        - Type: Audio File
+
+        Task:
+        1. Analyze the audio content and generate a comprehensive summary.
+        2. Extract key topics, main points, and important information from the audio.
+        3. Identify speakers if multiple people are talking.
+        4. Note the tone, mood, and context of the conversation.
+        5. Provide a structured summary with clear sections.
+        6. Include timestamps if possible to reference specific parts.
+        7. Generate actionable insights and key takeaways.
+        8. Format the output in markdown for better readability.
+
+        Output Format:
+        ## 🎵 Audio Summary
+        
+        ### 📋 Basic Information
+        - **File Name:** $fileName
+        - **Duration:** [if available]
+        - **File Size:** ${fileSize} bytes
+        
+        ### 🎯 Main Topics
+        - List the main topics discussed in the audio
+        
+        ### 🔑 Key Points
+        - Highlight the most important points and insights
+        
+        ### 📝 Detailed Summary
+        - Provide a comprehensive summary of the audio content
+        
+        ### 👥 Speakers
+        - Identify speakers if multiple people are talking
+        
+        ### 💡 Key Takeaways
+        - List the main takeaways and actionable insights
+        
+        ### 🏷️ Tags
+        - Suggest relevant tags or categories for this audio content
+
+        Important:
+        - Use **bold** for important points and key information
+        - Use *italics* for emphasis
+        - Use bullet points (-) for lists
+        - Use numbered lists (1., 2., etc.) for step-by-step information
+        - Use > blockquotes for important quotes or key statements
+        - Make the summary comprehensive and well-structured
+        """.trimIndent()
+    }
 
     /**
      * Generate fallback content when AI service is unavailable.
@@ -767,6 +829,7 @@ class FirebaseAiService(private val context: Context) {
         PDF,
         IMAGE,
         DOCUMENT,
+        AUDIO,
         UNSUPPORTED
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bigcash.ai.vectordb.viewmodel.PdfViewModel
 import kotlinx.coroutines.launch
+import android.util.Log
 import java.io.InputStream
 import android.content.Intent
 import android.net.Uri
@@ -41,6 +42,9 @@ import io.noties.markwon.linkify.LinkifyPlugin
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
+
+private const val TAG = "PdfManagementScreen"
+private const val UI_DEBUG_TAG = "AUDIO_UI"
 
 /**
  * Main screen for PDF management functionality.
@@ -79,6 +83,13 @@ fun PdfManagementScreen(
     var showYouTubeDialog by remember { mutableStateOf(false) }
     var showSummaryDialog by remember { mutableStateOf(false) }
     var youtubeUrl by remember { mutableStateOf("") }
+    
+    // Audio Recording State
+    val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
+    val isProcessingAudio by viewModel.isProcessingAudio.collectAsStateWithLifecycle()
+    val audioSummary by viewModel.audioSummary.collectAsStateWithLifecycle()
+    val audioError by viewModel.audioError.collectAsStateWithLifecycle()
+    var showAudioSummaryDialog by remember { mutableStateOf(false) }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -129,6 +140,25 @@ fun PdfManagementScreen(
                 showYouTubeDialog = false
                 youtubeUrl = ""
                 showSummaryDialog = true
+            }
+        }
+    }
+
+    // Handle audio processing results
+    LaunchedEffect(audioSummary, isProcessingAudio, audioError) {
+        Log.d(UI_DEBUG_TAG, "🔄 Audio processing LaunchedEffect triggered")
+        Log.d(UI_DEBUG_TAG, "📊 Audio summary length: ${audioSummary.length}")
+        Log.d(UI_DEBUG_TAG, "📊 Is processing audio: $isProcessingAudio")
+        Log.d(UI_DEBUG_TAG, "📊 Audio error: $audioError")
+        
+        when {
+            audioSummary.isNotEmpty() && !isProcessingAudio -> {
+                Log.d(UI_DEBUG_TAG, "✅ Audio processing completed, showing summary dialog")
+                showAudioSummaryDialog = true
+            }
+            audioError != null -> {
+                Log.d(UI_DEBUG_TAG, "❌ Audio error detected: $audioError")
+                // Error will be displayed in the UI
             }
         }
     }
@@ -245,10 +275,74 @@ fun PdfManagementScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("YouTube Transcript")
                     }
+
+                    // Voice Recording Button
+                    Button(
+                        onClick = {
+                            Log.d(UI_DEBUG_TAG, "🎤 Voice recording button clicked")
+                            Log.d(UI_DEBUG_TAG, "📊 Current recording state: $isRecording")
+                            Log.d(UI_DEBUG_TAG, "📊 Current processing state: $isProcessingAudio")
+                            
+                            if (isRecording) {
+                                Log.d(UI_DEBUG_TAG, "⏹️ Stopping audio recording")
+                                viewModel.stopAudioRecording()
+                            } else {
+                                Log.d(UI_DEBUG_TAG, "▶️ Starting audio recording")
+                                // Clear any previous errors when starting new recording
+                                if (audioError != null) {
+                                    Log.d(UI_DEBUG_TAG, "🧹 Clearing previous audio errors")
+                                    viewModel.clearAudioData()
+                                }
+                                viewModel.startAudioRecording()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading && !isProcessingAudio
+                    ) {
+                        Icon(
+                            if (isRecording) Icons.Filled.Delete else Icons.Filled.Add,
+                            contentDescription = if (isRecording) "Stop Recording" else "Start Recording"
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isRecording) "Stop Recording" else "Voice Recording")
+                    }
+
+                    // Recording status indicator
+                    if (isRecording || isProcessingAudio || audioError != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (isProcessingAudio) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Processing audio...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else if (isRecording) {
+                                Text(
+                                    text = "🔴 Recording...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            } else if (audioError != null) {
+                                Text(
+                                    text = "Error: $audioError",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Text(
-                    text = "Supports PDF files, images (JPG, PNG, etc.), documents (DOC, TXT, etc.), and YouTube transcripts",
+                    text = "Supports PDF files, images (JPG, PNG, etc.), documents (DOC, TXT, etc.), YouTube transcripts, and voice recordings",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
@@ -393,6 +487,20 @@ fun PdfManagementScreen(
             onDismiss = {
                 showSummaryDialog = false
                 viewModel.clearTranscriptData()
+            },
+        )
+    }
+
+    // Audio Summary Display Dialog
+    if (showAudioSummaryDialog) {
+        Log.d(UI_DEBUG_TAG, "📱 Showing audio summary dialog")
+        Log.d(UI_DEBUG_TAG, "📝 Summary length: ${audioSummary.length} characters")
+        SummaryDisplayDialog(
+            summary = audioSummary,
+            onDismiss = {
+                Log.d(UI_DEBUG_TAG, "❌ Audio summary dialog dismissed")
+                showAudioSummaryDialog = false
+                viewModel.clearAudioData()
             },
         )
     }

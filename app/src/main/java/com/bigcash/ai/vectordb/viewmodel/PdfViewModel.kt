@@ -1,6 +1,9 @@
 package com.bigcash.ai.vectordb.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.media.MediaRecorder
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bigcash.ai.vectordb.data.PdfEntity
@@ -12,12 +15,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import android.util.Log
 
 /**
  * ViewModel for PDF management operations.
  * This class handles the UI state and business logic for PDF operations.
  */
 class PdfViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        private const val TAG = "PdfViewModel"
+        private const val AUDIO_DEBUG_TAG = "AUDIO_RECORDING"
+    }
 
     private val repository = PdfRepository(application)
     private val firebaseAiService = FirebaseAiService(application)
@@ -50,6 +62,23 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _transcriptError = MutableStateFlow<String?>(null)
     val transcriptError: StateFlow<String?> = _transcriptError.asStateFlow()
+
+    // Audio Recording State
+    private val _isRecording = MutableStateFlow(false)
+    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+
+    private val _isProcessingAudio = MutableStateFlow(false)
+    val isProcessingAudio: StateFlow<Boolean> = _isProcessingAudio.asStateFlow()
+
+    private val _audioSummary = MutableStateFlow("")
+    val audioSummary: StateFlow<String> = _audioSummary.asStateFlow()
+
+    private val _audioError = MutableStateFlow<String?>(null)
+    val audioError: StateFlow<String?> = _audioError.asStateFlow()
+
+    // Audio recording components
+    private var mediaRecorder: MediaRecorder? = null
+    private var audioFile: File? = null
 
     init {
         loadAllPdfs()
@@ -319,12 +348,191 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         return _isFetchingTranscript.value || _isSummarizingTranscript.value
     }
 
+    /**
+     * Start audio recording.
+     */
+    fun startAudioRecording() {
+        Log.d(AUDIO_DEBUG_TAG, "🎤 Starting audio recording process")
+        viewModelScope.launch {
+            try {
+                Log.d(AUDIO_DEBUG_TAG, "📱 Setting recording state to true")
+                _isRecording.value = true
+                _audioError.value = null
+                
+                // Create audio file
+                val timestamp = System.currentTimeMillis()
+                audioFile = File(getApplication<Application>().cacheDir, "audio_recording_${timestamp}.wav")
+                Log.d(AUDIO_DEBUG_TAG, "📁 Created audio file: ${audioFile?.absolutePath}")
+                
+                // Initialize MediaRecorder
+                Log.d(AUDIO_DEBUG_TAG, "🔧 Initializing MediaRecorder for Android API ${Build.VERSION.SDK_INT}")
+                mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    MediaRecorder(getApplication())
+                } else {
+                    @Suppress("DEPRECATION")
+                    MediaRecorder()
+                }
+                
+                Log.d(AUDIO_DEBUG_TAG, "⚙️ Configuring MediaRecorder settings")
+                mediaRecorder?.apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                    setOutputFile(audioFile?.absolutePath)
+                    
+                    Log.d(AUDIO_DEBUG_TAG, "🎯 Preparing MediaRecorder")
+                    prepare()
+                    Log.d(AUDIO_DEBUG_TAG, "▶️ Starting audio recording")
+                    start()
+                }
+                
+                Log.d(AUDIO_DEBUG_TAG, "✅ Audio recording started successfully")
+                
+            } catch (e: Exception) {
+                Log.e(AUDIO_DEBUG_TAG, "❌ Failed to start audio recording", e)
+                _audioError.value = "Failed to start recording: ${e.message}"
+                _isRecording.value = false
+            }
+        }
+    }
+
+    /**
+     * Stop audio recording and process the audio.
+     */
+    fun stopAudioRecording() {
+        Log.d(AUDIO_DEBUG_TAG, "⏹️ Stopping audio recording")
+        viewModelScope.launch {
+            try {
+                Log.d(AUDIO_DEBUG_TAG, "🛑 Stopping MediaRecorder")
+                mediaRecorder?.apply {
+                    stop()
+                    release()
+                }
+                mediaRecorder = null
+                _isRecording.value = false
+                Log.d(AUDIO_DEBUG_TAG, "📱 Recording state set to false")
+                
+                // Process the recorded audio
+                audioFile?.let { file ->
+                    Log.d(AUDIO_DEBUG_TAG, "📁 Checking audio file: ${file.absolutePath}")
+                    Log.d(AUDIO_DEBUG_TAG, "📊 File exists: ${file.exists()}, Size: ${file.length()} bytes")
+                    
+                    if (file.exists() && file.length() > 0) {
+                        Log.d(AUDIO_DEBUG_TAG, "✅ Audio file is valid, starting processing")
+                        processAudioFile(file)
+                    } else {
+                        Log.w(AUDIO_DEBUG_TAG, "⚠️ No audio was recorded or file is empty")
+                        _audioError.value = "No audio was recorded"
+                    }
+                }
+                
+                Log.d(AUDIO_DEBUG_TAG, "✅ Audio recording stopped successfully")
+                
+            } catch (e: Exception) {
+                Log.e(AUDIO_DEBUG_TAG, "❌ Failed to stop audio recording", e)
+                _audioError.value = "Failed to stop recording: ${e.message}"
+                _isRecording.value = false
+            }
+        }
+    }
+
+    /**
+     * Process the recorded audio file and generate summary.
+     */
+    private suspend fun processAudioFile(audioFile: File) {
+        Log.d(AUDIO_DEBUG_TAG, "🔄 Starting audio file processing")
+        Log.d(AUDIO_DEBUG_TAG, "📁 Processing file: ${audioFile.absolutePath}")
+        Log.d(AUDIO_DEBUG_TAG, "📊 File size: ${audioFile.length()} bytes")
+        
+        _isProcessingAudio.value = true
+        _audioError.value = null
+        
+        try {
+            // Read audio file as byte array
+            Log.d(AUDIO_DEBUG_TAG, "📖 Reading audio file as byte array")
+            val audioData = audioFile.readBytes()
+            val fileName = audioFile.name
+            Log.d(AUDIO_DEBUG_TAG, "📄 File name: $fileName")
+            Log.d(AUDIO_DEBUG_TAG, "📊 Audio data size: ${audioData.size} bytes")
+            
+            // Generate content using Firebase AI
+            Log.d(AUDIO_DEBUG_TAG, "🤖 Sending audio to Firebase AI for processing")
+            val summary = firebaseAiService.generateContentFromFile(fileName, audioData, FirebaseAiService.FileType.AUDIO)
+            Log.d(AUDIO_DEBUG_TAG, "✅ AI processing completed")
+            Log.d(AUDIO_DEBUG_TAG, "📝 Summary length: ${summary.length} characters")
+            _audioSummary.value = summary
+            
+            // Clean up the temporary audio file
+            Log.d(AUDIO_DEBUG_TAG, "🗑️ Cleaning up temporary audio file")
+            val deleted = audioFile.delete()
+            Log.d(AUDIO_DEBUG_TAG, "🗑️ File deleted: $deleted")
+            
+            Log.d(AUDIO_DEBUG_TAG, "✅ Audio processing completed successfully")
+            
+        } catch (e: Exception) {
+            Log.e(AUDIO_DEBUG_TAG, "❌ Failed to process audio file", e)
+            _audioError.value = "Failed to process audio: ${e.message}"
+        } finally {
+            _isProcessingAudio.value = false
+            Log.d(AUDIO_DEBUG_TAG, "📱 Processing state set to false")
+        }
+    }
+
+    /**
+     * Clear audio data.
+     */
+    fun clearAudioData() {
+        Log.d(AUDIO_DEBUG_TAG, "🧹 Clearing audio data")
+        _audioSummary.value = ""
+        _audioError.value = null
+        _isRecording.value = false
+        _isProcessingAudio.value = false
+        Log.d(AUDIO_DEBUG_TAG, "✅ Audio data cleared")
+    }
+
+    /**
+     * Get the current audio summary.
+     */
+    fun getAudioSummary(): String {
+        val summary = _audioSummary.value
+        Log.d(AUDIO_DEBUG_TAG, "📖 Getting audio summary: ${summary.length} characters")
+        return summary
+    }
+
+    /**
+     * Check if audio is being processed.
+     */
+    fun isAudioProcessing(): Boolean {
+        val isProcessing = _isProcessingAudio.value
+        Log.d(AUDIO_DEBUG_TAG, "🔍 Checking audio processing state: $isProcessing")
+        return isProcessing
+    }
     
     /**
      * Clean up resources when ViewModel is destroyed.
      */
     override fun onCleared() {
+        Log.d(AUDIO_DEBUG_TAG, "🧹 Cleaning up PdfViewModel resources")
         super.onCleared()
+        
+        // Clean up audio recording resources
+        if (mediaRecorder != null) {
+            Log.d(AUDIO_DEBUG_TAG, "🎤 Releasing MediaRecorder")
+            try {
+                mediaRecorder?.release()
+            } catch (e: Exception) {
+                Log.e(AUDIO_DEBUG_TAG, "❌ Error releasing MediaRecorder", e)
+            }
+        }
+        
+        // Clean up audio file
+        audioFile?.let { file ->
+            Log.d(AUDIO_DEBUG_TAG, "🗑️ Deleting audio file: ${file.absolutePath}")
+            val deleted = file.delete()
+            Log.d(AUDIO_DEBUG_TAG, "🗑️ Audio file deleted: $deleted")
+        }
+        
         repository.cleanup()
+        Log.d(AUDIO_DEBUG_TAG, "✅ PdfViewModel cleanup completed")
     }
 }
