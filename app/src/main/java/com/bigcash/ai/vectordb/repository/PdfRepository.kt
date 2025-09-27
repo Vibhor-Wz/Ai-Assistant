@@ -6,7 +6,7 @@ import com.bigcash.ai.vectordb.data.ObjectBox
 import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.data.PdfEntity_
 import com.bigcash.ai.vectordb.service.EmbeddingServiceFactory
-import com.bigcash.ai.vectordb.service.PdfTextExtractor
+import com.bigcash.ai.vectordb.service.MlKitTextExtractor
 import com.bigcash.ai.vectordb.utils.FileStorageManager
 import io.objectbox.Box
 import io.objectbox.query.QueryBuilder
@@ -20,16 +20,16 @@ import kotlin.random.Random
  * Now includes local text extraction and embedding generation.
  */
 class PdfRepository(private val context: Context) {
-    
+
     companion object {
         private const val TAG = "VECTOR_DEBUG" // Single tag for filtering all vector-related logs
     }
-    
+
     private val pdfBox: Box<PdfEntity> = ObjectBox.get().boxFor(PdfEntity::class.java)
-    private val pdfTextExtractor = PdfTextExtractor(context)
+    private val mlKitExtractor = MlKitTextExtractor(context)
     private val embeddingService = EmbeddingServiceFactory.getDefaultEmbeddingService(context)
     private val fileStorageManager = FileStorageManager(context)
-    
+
     /**
      * Save a PDF entity to the database.
      *
@@ -39,7 +39,7 @@ class PdfRepository(private val context: Context) {
     suspend fun savePdf(pdfEntity: PdfEntity): Long = withContext(Dispatchers.IO) {
         pdfBox.put(pdfEntity)
     }
-    
+
     /**
      * Get all PDFs from the database.
      *
@@ -48,7 +48,7 @@ class PdfRepository(private val context: Context) {
     suspend fun getAllPdfs(): List<PdfEntity> = withContext(Dispatchers.IO) {
         pdfBox.all
     }
-    
+
     /**
      * Get a PDF by its ID.
      *
@@ -58,7 +58,7 @@ class PdfRepository(private val context: Context) {
     suspend fun getPdfById(id: Long): PdfEntity? = withContext(Dispatchers.IO) {
         pdfBox.get(id)
     }
-    
+
     /**
      * Delete a PDF from the database and local storage.
      *
@@ -73,9 +73,12 @@ class PdfRepository(private val context: Context) {
                 // Delete the local file if it exists
                 if (pdfEntity.localFilePath.isNotEmpty()) {
                     val fileDeleted = fileStorageManager.deleteFile(pdfEntity.localFilePath)
-                    Log.d(TAG, "Local file deletion result: $fileDeleted for path: ${pdfEntity.localFilePath}")
+                    Log.d(
+                        TAG,
+                        "Local file deletion result: $fileDeleted for path: ${pdfEntity.localFilePath}"
+                    )
                 }
-                
+
                 // Delete from database
                 pdfBox.remove(id)
                 Log.d(TAG, "PDF deleted from database: $id")
@@ -89,7 +92,7 @@ class PdfRepository(private val context: Context) {
             false
         }
     }
-    
+
     /**
      * Search PDFs by name.
      *
@@ -104,7 +107,7 @@ class PdfRepository(private val context: Context) {
         q.close()
         return@withContext find
     }
-    
+
     /**
      * Generate a mock vector embedding for demonstration purposes.
      * This is kept as a fallback method.
@@ -115,43 +118,46 @@ class PdfRepository(private val context: Context) {
     fun generateMockEmbedding(size: Int = 768): FloatArray {
         return FloatArray(size) { Random.nextFloat() * 2 - 1 } // Values between -1 and 1
     }
-    
+
     /**
      * Extract text from PDF data.
      *
      * @param data PDF file data as ByteArray
      * @return Extracted text
      */
-    suspend fun extractTextFromPdf(fileName: String, data: ByteArray): String = withContext(Dispatchers.IO) {
-        Log.d(TAG, "📖 Repository: Starting text extraction from file: $fileName")
-        Log.d(TAG, "📊 Repository: File data size: ${data.size} bytes")
-        Log.d(TAG, "📊 Repository: File data : $data")
+    suspend fun extractTextFromPdf(fileName: String, data: ByteArray): String =
+        withContext(Dispatchers.IO) {
+            Log.d(TAG, "📖 Repository: Starting text extraction from file: $fileName")
+            Log.d(TAG, "📊 Repository: File data size: ${data.size} bytes")
+            Log.d(TAG, "📊 Repository: File data : $data")
 
-        try {
-            val extractedText = pdfTextExtractor.extractTextFromPdf(fileName, data)
-            Log.d(TAG, "✅ Repository: Text extraction completed successfully")
-            Log.d(TAG, "📊 Repository: Extracted text length: ${extractedText.length}")
-            extractedText
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Repository: Error extracting text from file", e)
-            ""
+            try {
+                val extractedText = mlKitExtractor.extractTextFromFile(fileName, data)
+                Log.d(TAG, "✅ Repository: Text extraction completed successfully")
+                Log.d(TAG, "📊 Repository: Extracted text length: ${extractedText.length}")
+                extractedText
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Repository: Error extracting text from file", e)
+                ""
+            }
         }
-    }
-    suspend fun extractTextFromAudio(fileName: String, data: ByteArray): String = withContext(Dispatchers.IO) {
-        Log.d(TAG, "📖 Repository: Starting text extraction from Audio: $fileName")
-        Log.d(TAG, "📊 Repository: Audio data size: ${data.size} bytes")
-        Log.d(TAG, "📊 Repository: Audio data : $data")
 
-        try {
-            val extractedText = pdfTextExtractor.extractTextFromPdf(fileName, data)
-            Log.d(TAG, "✅ Repository: Text extraction completed successfully")
-            Log.d(TAG, "📊 Repository: Extracted text length: ${extractedText.length}")
-            extractedText
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Repository: Error extracting text from audio file", e)
-            ""
+    suspend fun extractTextFromAudio(fileName: String, data: ByteArray): String =
+        withContext(Dispatchers.IO) {
+            Log.d(TAG, "📖 Repository: Starting text extraction from Audio: $fileName")
+            Log.d(TAG, "📊 Repository: Audio data size: ${data.size} bytes")
+            Log.d(TAG, "📊 Repository: Audio data : $data")
+
+            try {
+                val extractedText = mlKitExtractor.extractTextFromFile(fileName, data)
+                Log.d(TAG, "✅ Repository: Text extraction completed successfully")
+                Log.d(TAG, "📊 Repository: Extracted text length: ${extractedText.length}")
+                extractedText
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Repository: Error extracting text from audio file", e)
+                ""
+            }
         }
-    }
 
 
     /**
@@ -175,7 +181,7 @@ class PdfRepository(private val context: Context) {
             return@withContext mockEmbedding
         }
     }
-    
+
     /**
      * Create a PDF entity from file data with real text extraction and embedding generation.
      *
@@ -184,10 +190,14 @@ class PdfRepository(private val context: Context) {
      * @param description Optional description
      * @return PdfEntity with extracted text and generated embedding
      */
-    suspend fun createPdfEntity(name: String, data: ByteArray, description: String = ""): PdfEntity ?  = withContext(Dispatchers.IO) {
+    suspend fun createPdfEntity(
+        name: String,
+        data: ByteArray,
+        description: String = ""
+    ): PdfEntity? = withContext(Dispatchers.IO) {
         Log.d(TAG, "🚀 Repository: Starting PDF entity creation")
         Log.d(TAG, "📄 Repository: Processing PDF: $name (${data.size} bytes)")
-        
+
         try {
             // Save the original file to local storage
             Log.d(TAG, "💾 Repository: Saving file to local storage")
@@ -197,18 +207,24 @@ class PdfRepository(private val context: Context) {
                 return@withContext null
             }
             Log.d(TAG, "✅ Repository: File saved to local storage: $localFilePath")
-            
+
             // Extract text from PDF using ML Kit
             Log.d(TAG, "📖 Repository: Extracting text from file using ML Kit")
             val extractedText = extractTextFromPdf(name, data)
-            
+
             if (extractedText.isEmpty()) {
                 Log.w(TAG, "⚠️ Repository: No text extracted from PDF: $name")
             } else {
-                Log.d(TAG, "✅ Repository: Extracted ${extractedText.length} characters from PDF: $name")
-                Log.d(TAG, "📝 Repository: Text preview: ${extractedText.take(100)}${if (extractedText.length > 100) "..." else ""}")
+                Log.d(
+                    TAG,
+                    "✅ Repository: Extracted ${extractedText.length} characters from PDF: $name"
+                )
+                Log.d(
+                    TAG,
+                    "📝 Repository: Text preview: ${extractedText.take(100)}${if (extractedText.length > 100) "..." else ""}"
+                )
             }
-            
+
             // Generate embedding from extracted text
             Log.d(TAG, "🧠 Repository: Generating embedding")
             val embedding = if (extractedText.isNotEmpty()) {
@@ -216,10 +232,13 @@ class PdfRepository(private val context: Context) {
                 generateEmbedding(extractedText)
             } else {
                 // Fallback to mock embedding if no text extracted
-                Log.w(TAG, "⚠️ Repository: Using mock embedding for PDF with no extracted text: $name")
+                Log.w(
+                    TAG,
+                    "⚠️ Repository: Using mock embedding for PDF with no extracted text: $name"
+                )
                 generateMockEmbedding()
             }
-            
+
             val pdfEntity = PdfEntity(
                 name = name,
                 data = extractedText,
@@ -228,12 +247,17 @@ class PdfRepository(private val context: Context) {
                 description = description.ifEmpty { "Extracted text: ${extractedText.take(100)}..." },
                 localFilePath = localFilePath
             )
-            
+
             Log.d(TAG, "✅ Repository: PDF entity created successfully")
             Log.d(TAG, "📊 Repository: Entity embedding dimension: ${embedding.size}")
-            Log.d(TAG, "📊 Repository: Entity embedding magnitude: ${kotlin.math.sqrt(embedding.sumOf { (it * it).toDouble() }.toFloat())}")
+            Log.d(
+                TAG,
+                "📊 Repository: Entity embedding magnitude: ${
+                    kotlin.math.sqrt(embedding.sumOf { (it * it).toDouble() }.toFloat())
+                }"
+            )
             Log.d(TAG, "📁 Repository: Local file path: $localFilePath")
-            
+
             return@withContext pdfEntity
         } catch (e: Exception) {
             Log.e(TAG, "❌ Repository: Error creating PDF entity for: $name", e)
@@ -262,32 +286,36 @@ class PdfRepository(private val context: Context) {
      * @param topK Number of top results to return (default: 3)
      * @return List of most similar PDFs with similarity scores
      */
-    suspend fun vectorSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "🔍 Repository: Starting ObjectBox vector search")
-        Log.d(TAG, "📝 Repository: Query: '$queryText'")
-        Log.d(TAG, "📊 Repository: Top K: $topK")
-        
-        try {
-            // Generate embedding for the query
-            Log.d(TAG, "🧠 Repository: Generating query embedding")
-            val queryEmbedding = generateEmbedding(queryText)
-            Log.d(TAG, "✅ Repository: Query embedding generated (dimension: ${queryEmbedding.size})")
-            
-            // Perform vector search using ObjectBox
-            val searchResults = performObjectBoxVectorSearch(queryEmbedding, topK)
-            
-            Log.d(TAG, "✅ Repository: Vector search completed")
-            Log.d(TAG, "📊 Repository: Found $searchResults results")
-            
-            return@withContext searchResults
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Repository: Error in vector search", e)
-            Log.d(TAG, "📊 Repository: Returning empty results due to error")
-            return@withContext emptyList()
+    suspend fun vectorSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity, Float>> =
+        withContext(Dispatchers.IO) {
+            Log.d(TAG, "🔍 Repository: Starting ObjectBox vector search")
+            Log.d(TAG, "📝 Repository: Query: '$queryText'")
+            Log.d(TAG, "📊 Repository: Top K: $topK")
+
+            try {
+                // Generate embedding for the query
+                Log.d(TAG, "🧠 Repository: Generating query embedding")
+                val queryEmbedding = generateEmbedding(queryText)
+                Log.d(
+                    TAG,
+                    "✅ Repository: Query embedding generated (dimension: ${queryEmbedding.size})"
+                )
+
+                // Perform vector search using ObjectBox
+                val searchResults = performObjectBoxVectorSearch(queryEmbedding, topK)
+
+                Log.d(TAG, "✅ Repository: Vector search completed")
+                Log.d(TAG, "📊 Repository: Found $searchResults results")
+
+                return@withContext searchResults
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Repository: Error in vector search", e)
+                Log.d(TAG, "📊 Repository: Returning empty results due to error")
+                return@withContext emptyList()
+            }
         }
-    }
-    
+
     /**
      * Perform the actual ObjectBox vector search using the query embedding.
      *
@@ -295,14 +323,17 @@ class PdfRepository(private val context: Context) {
      * @param topK Number of top results to return
      * @return List of similar PDFs with similarity scores
      */
-    private suspend fun performObjectBoxVectorSearch(queryEmbedding: FloatArray, topK: Int): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
+    private suspend fun performObjectBoxVectorSearch(
+        queryEmbedding: FloatArray,
+        topK: Int
+    ): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "🔍 Repository: Performing ObjectBox vector search")
-        
+
         try {
             // Get all PDFs from the database
             val allPdfs = pdfBox.all
             Log.d(TAG, "📊 Repository: Total PDFs in database: ${allPdfs.size}")
-            
+
             if (allPdfs.isEmpty()) {
                 Log.d(TAG, "📊 Repository: No PDFs found in database")
                 return@withContext emptyList()
@@ -315,13 +346,13 @@ class PdfRepository(private val context: Context) {
             return@withContext resultsWithScores.map { result ->
                 Pair(result.get(), result.score.toFloat())
             }
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "❌ Repository: Error in ObjectBox vector search", e)
             throw e
         }
     }
-    
+
     /**
      * Get the original file from local storage.
      *
@@ -336,7 +367,7 @@ class PdfRepository(private val context: Context) {
             null
         }
     }
-    
+
     /**
      * Check if the original file exists in local storage.
      *
@@ -350,7 +381,7 @@ class PdfRepository(private val context: Context) {
             false
         }
     }
-    
+
     /**
      * Get the size of the original file in local storage.
      *
@@ -364,7 +395,7 @@ class PdfRepository(private val context: Context) {
             -1
         }
     }
-    
+
     /**
      * Clear all data from the database.
      * This is useful when schema changes require a fresh start.
@@ -379,23 +410,23 @@ class PdfRepository(private val context: Context) {
             Log.e(TAG, "❌ Repository: Error clearing data", e)
         }
     }
-    
+
     /**
      * Check if the database is empty.
-     * 
+     *
      * @return True if no data exists, false otherwise
      */
     fun isDatabaseEmpty(): Boolean {
         return ObjectBox.isEmpty()
     }
-    
+
     /**
      * Clean up resources.
      */
     fun cleanup() {
         Log.d(TAG, "🧹 Repository: Cleaning up all resources")
         // Note: EmbeddingServiceFactory services don't require cleanup
-        pdfTextExtractor.cleanup()
+        mlKitExtractor.cleanup()
         // FileStorageManager doesn't require cleanup as it uses lazy initialization
     }
 }

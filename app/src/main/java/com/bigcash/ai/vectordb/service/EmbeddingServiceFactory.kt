@@ -13,7 +13,6 @@ object EmbeddingServiceFactory {
     
     // Service types
     const val TYPE_MOCK = "mock"
-    const val TYPE_SAFE_GEMINI = "safe_gemini"
     const val TYPE_HTTP_GEMINI = "http_gemini"
     
     // Default service type
@@ -31,11 +30,8 @@ object EmbeddingServiceFactory {
         
         return when (serviceType) {
             TYPE_MOCK -> MockEmbeddingService(context)
-            TYPE_SAFE_GEMINI -> SafeGeminiEmbeddingService(context)
-            TYPE_HTTP_GEMINI -> HttpGeminiEmbeddingService(context)
             else -> {
-                Log.w(TAG, "Unknown service type: $serviceType, falling back to $DEFAULT_SERVICE_TYPE")
-                SafeGeminiEmbeddingService(context)
+                HttpGeminiEmbeddingService(context)
             }
         }
     }
@@ -56,7 +52,7 @@ object EmbeddingServiceFactory {
      * @return List of available service types
      */
     fun getAvailableServiceTypes(): List<String> {
-        return listOf(TYPE_MOCK, TYPE_SAFE_GEMINI, TYPE_HTTP_GEMINI)
+        return listOf(TYPE_MOCK, TYPE_HTTP_GEMINI)
     }
 }
 
