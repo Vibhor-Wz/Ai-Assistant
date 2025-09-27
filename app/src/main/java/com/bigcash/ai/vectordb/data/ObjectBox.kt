@@ -55,9 +55,6 @@ object ObjectBox {
                 // Clear all PDF entities
                 store.boxFor(PdfEntity::class.java).removeAll()
                 
-                // Clear all TextChunk entities
-                store.boxFor(TextChunkEntity::class.java).removeAll()
-                
                 android.util.Log.d("ObjectBox", "✅ All data cleared successfully")
             } catch (e: Exception) {
                 android.util.Log.e("ObjectBox", "❌ Error clearing data", e)
@@ -73,8 +70,7 @@ object ObjectBox {
     fun isEmpty(): Boolean {
         return boxStore?.let { store ->
             val pdfCount = store.boxFor(PdfEntity::class.java).count()
-            val textChunkCount = store.boxFor(TextChunkEntity::class.java).count()
-            pdfCount == 0L && textChunkCount == 0L
+            pdfCount == 0L
         } ?: true
     }
 }

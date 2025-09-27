@@ -279,17 +279,15 @@ class FirebaseAiService(private val context: Context) {
         5. For tables, extract text row by row maintaining the original structure.
         6. For lists, preserve the original order and formatting.
         7. Provide structured JSON output in the following format:
-        {
-            "metadata": {
-                "file_name": "$fileName",
-                "file_size": ${fileSize},
-                "file_type": "PDF"
-            },
-            "text_lines": ["list of all text lines in order as they appear in the document"],
-            "tables": ["list of tables in JSON-friendly format if any"],
-            "other_content": ["any additional detected content"]
-        }
-        8. Output only valid JSON, without extra explanation or commentary.
+            {
+                "metadata": {
+                    "file_name": "$fileName",
+                    "file_size": ${fileSize},
+                    "file_type": "PDF"
+                },
+                "document_text": "Full content of the PDF exactly as it appears, preserving text, tables, images, spacing, and formatting"
+            }
+        8. Output only valid JSON, without extra explanation or commentary and no "'''" in start and end of json.
         9. Maintain the exact order of content as it appears in the PDF - do not group similar content together.
         ⚠️ IMPORTANT:
         Return only valid JSON.
@@ -316,18 +314,23 @@ class FirebaseAiService(private val context: Context) {
 
         Task:
         1. Perform OCR and extract all textual content exactly as it appears in the image.
-        2. Preserve structure (lines, paragraphs, labels, tables if present).
-        3. Provide structured JSON output in the following format:
+        2. Preserve the original structure and context:
+           - Maintain lines, paragraphs, labels, tables, and any visible formatting.
+           - Include any detected images or graphics as descriptive placeholders (e.g., "[Image: description]") inline.
+           - Preserve the natural flow and sequence of content as it appears in the image.
+        3. Include everything visible in the image, whether it is a document (e.g., Aadhaar, PAN, passbook, bank statement), a form, an advertisement, or any other content.
+        4. Represent the entire content as a single string in JSON to maintain context.
+        Required Output:
+        Provide structured JSON in the following format:
+    
         {
             "metadata": {
                 "file_name": "$fileName",
                 "file_size": ${fileSize},
                 "file_type": "Image"
             },
-            "text_lines": ["list of all text lines in order"],
-            "tables": ["list of tables in JSON-friendly format if any"],
-            "other_content": ["any additional detected content"]
-         }
+            "document_text": "Full content of the image exactly as it appears, preserving text, tables, images, and layout"
+        }
         ⚠️ IMPORTANT:
         Return only valid JSON.
         Do not include Markdown.
@@ -364,11 +367,9 @@ class FirebaseAiService(private val context: Context) {
                 "metadata": {
                     "file_name": "$fileName",
                     "file_size": ${fileSize},
-                    "file_type": "Document"
+                    "file_type": "PDF"
                 },
-                "text_lines": ["list of all text lines in order as they appear in the document"],
-                "tables": ["list of tables in JSON-friendly format if any"],
-                "other_content": ["any additional detected content"]
+                "document_text": "Full content of the PDF exactly as it appears, preserving text, tables, images, spacing, and formatting"
             }
         8. Output only valid JSON, without any extra text.
         9. Maintain the exact order of content as it appears in the document - do not group similar content together.
@@ -397,21 +398,24 @@ class FirebaseAiService(private val context: Context) {
 
         Task:
         1. Determine the file type and extract all textual content exactly as it appears.
-        2. Preserve the original sequence and flow of content - do not reorganize or group content.
-        3. Extract text line by line, maintaining the natural reading progression.
-        4. Include all text from the file in the order it appears.
-        5. For tables, extract text row by row maintaining the original structure.
+        2. Preserve the original sequence, layout, and flow of content:
+           - Maintain lines, paragraphs, labels, tables, lists, and images in their original positions.
+           - For images or graphics, include descriptive placeholders inline (e.g., "[Image: description]").
+           - Do NOT split content into separate sections unless naturally present.
+        3. Include all visible content in the order it appears in the file.
+        4. Represent the entire content as a single string in JSON to maintain context.
         6. For lists, preserve the original order and formatting.
         7. Provide structured JSON output in the following format:
+            Required Output:
+            Provide structured JSON in the following format:
+        
             {
                 "metadata": {
                     "file_name": "$fileName",
                     "file_size": ${fileSize},
                     "file_type": "<detected type>"
                 },
-                "text_lines": ["list of all text lines in order as they appear in the file"],
-                "tables": ["list of tables in JSON-friendly format if any"],
-                "other_content": ["any additional detected content"]
+                "document_text": "Full content of the file exactly as it appears, preserving text, tables, images, and layout"
             }
         8. Output only valid JSON, without any extra text.
         9. Maintain the exact order of content as it appears in the file - do not group similar content together.
