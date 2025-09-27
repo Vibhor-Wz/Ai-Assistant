@@ -17,10 +17,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }
     }
 }
 
 rootProject.name = "vectordb"
 include(":app")
-include(":youtube-transcript-kotlin")
- 

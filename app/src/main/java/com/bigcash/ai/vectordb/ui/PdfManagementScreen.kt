@@ -27,13 +27,17 @@ import kotlinx.coroutines.launch
 import java.io.InputStream
 import android.content.Intent
 import android.net.Uri
+import android.speech.RecognizerIntent
+import android.util.Log
 import androidx.compose.material.icons.filled.Build
 import androidx.core.content.FileProvider
 import com.bigcash.ai.vectordb.ui.components.PdfListItem
 import java.io.File
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.ui.viewinterop.AndroidView
+import com.bigcash.ai.vectordb.utils.PermissionHelper
 import io.noties.markwon.Markwon
 import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.image.ImagesPlugin
@@ -51,7 +55,8 @@ import io.noties.markwon.ext.tasklist.TaskListPlugin
 fun PdfManagementScreen(
     viewModel: PdfViewModel,
     onNavigateToChat: () -> Unit = {},
-    modifier: Modifier
+    modifier: Modifier,
+    permissionHelper: PermissionHelper
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -68,6 +73,14 @@ fun PdfManagementScreen(
     val transcriptText by viewModel.transcriptText.collectAsStateWithLifecycle()
     val summaryText by viewModel.summaryText.collectAsStateWithLifecycle()
     val transcriptError by viewModel.transcriptError.collectAsStateWithLifecycle()
+
+    // Audio Recording State
+    val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
+    val recordingError by viewModel.recordingError.collectAsStateWithLifecycle()
+
+    // Speech Recognition State
+    val recognizedText by viewModel.recognizedText.collectAsStateWithLifecycle()
+    val speechError by viewModel.speechError.collectAsStateWithLifecycle()
 
     // UI State
     var pdfName by remember { mutableStateOf("") }
@@ -87,7 +100,7 @@ fun PdfManagementScreen(
         uri?.let {
             selectedPdfUri = it
             showUploadDialog = true
-            // Extract filename from URI
+            // Extract filename from URI and detect file type
             val fileName =
                 context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                     val nameIndex =
@@ -99,6 +112,7 @@ fun PdfManagementScreen(
                     // Fallback based on MIME type
                     val mimeType = context.contentResolver.getType(uri)
                     when {
+                        mimeType?.startsWith("audio/") == true -> "audio.mp3"
                         mimeType?.startsWith("image/") == true -> "document.jpg"
                         mimeType?.startsWith("application/pdf") == true -> "document.pdf"
                         else -> "document.pdf"
@@ -226,14 +240,29 @@ fun PdfManagementScreen(
                         }
                     }
 
-                    Button(
-                        onClick = { filePickerLauncher.launch("*/*") },
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Upload Any File")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Any File Type")
+                        Button(
+                            onClick = { filePickerLauncher.launch("audio/*") },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isLoading
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Upload Audio")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Audio")
+                        }
+
+                        Button(
+                            onClick = { filePickerLauncher.launch("*/*") },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isLoading
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Upload Any File")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Any File")
+                        }
                     }
 
                     Button(
@@ -244,6 +273,24 @@ fun PdfManagementScreen(
                         Icon(Icons.Filled.PlayArrow, contentDescription = "YouTube Transcript")
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("YouTube Transcript")
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Button(
+                        onClick = {
+                            if (isRecording) {
+                                viewModel.stopAudioRecording()
+                            } else {
+                                viewModel.startAudioRecording(permissionHelper)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading && !isFetchingTranscript
+                    ) {
+                        Icon(Icons.Filled.Phone, contentDescription = "Audio Recording")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isRecording) "Stop Recording" else "Start Recording")
                     }
                 }
 
@@ -396,6 +443,17 @@ fun PdfManagementScreen(
             },
         )
     }
+    
+    // Speech Recognition Result Dialog
+    if (recognizedText.isNotEmpty()) {
+        SpeechResultDialog(
+            recognizedText = recognizedText,
+            speechError = speechError,
+            onDismiss = {
+                viewModel.clearSpeechData()
+            }
+        )
+    }
 }
 
 /**
@@ -463,8 +521,8 @@ private fun openFileWithExternalApp(context: android.content.Context, file: File
             }
             context.startActivity(fallbackIntent)
         }
-    } catch (e: Exception) {
-        android.util.Log.e("PdfManagementScreen", "Error opening file: ${file.name}", e)
+    } catch (e : Exception) {
+        Log.e("PdfManagementScreen", "Error opening file: ${file.name}", e)
     }
 }
 
@@ -671,6 +729,54 @@ fun SummaryDisplayDialog(
                 } else {
                     Text(
                         text = "No summary available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog to display recognized speech text.
+ */
+@Composable
+fun SpeechResultDialog(
+    recognizedText: String,
+    speechError: String?,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Speech Recognition Result") },
+        text = {
+            Column {
+                if (speechError != null) {
+                    Text(
+                        text = "Error: $speechError",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (recognizedText.isNotEmpty()) {
+                    Text(
+                        text = "Recognized Text:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = recognizedText,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    Text(
+                        text = "No speech recognized",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

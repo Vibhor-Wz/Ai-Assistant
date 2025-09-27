@@ -2,12 +2,14 @@ package com.bigcash.ai.vectordb.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.repository.PdfRepository
 import com.youtubetranscript.YouTubeTranscriptApi
 import com.youtubetranscript.TranscriptException
 import com.bigcash.ai.vectordb.service.FirebaseAiService
+import com.bigcash.ai.vectordb.service.AudioRecorderService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +23,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = PdfRepository(application)
     private val firebaseAiService = FirebaseAiService(application)
+    private val audioRecorderService = AudioRecorderService(application)
 
     // UI State
     private val _pdfs = MutableStateFlow<List<PdfEntity>>(emptyList())
@@ -50,6 +53,20 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _transcriptError = MutableStateFlow<String?>(null)
     val transcriptError: StateFlow<String?> = _transcriptError.asStateFlow()
+
+    // Speech Recognition State
+    private val _recognizedText = MutableStateFlow("")
+    val recognizedText: StateFlow<String> = _recognizedText.asStateFlow()
+
+    private val _speechError = MutableStateFlow<String?>(null)
+    val speechError: StateFlow<String?> = _speechError.asStateFlow()
+
+    // Audio Recording State
+    private val _isRecording = MutableStateFlow(false)
+    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+
+    private val _recordingError = MutableStateFlow<String?>(null)
+    val recordingError: StateFlow<String?> = _recordingError.asStateFlow()
 
     init {
         loadAllPdfs()
@@ -89,12 +106,12 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val pdfEntity = repository.createPdfEntity(name, data, description)
-                pdfEntity?.let{
+                pdfEntity?.let {
                     repository.savePdf(it)
                     _uploadSuccess.value = true
                     loadAllPdfs()
                 }
-                if(pdfEntity == null) {
+                if (pdfEntity == null) {
                     _errorMessage.value = "Failed to save PDF"
                 }
 
@@ -103,6 +120,35 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    /**
+     * Process audio file and extract text using AI transcription.
+     *
+     * @param name The name of the audio file
+     * @param data The audio file data
+     */
+    suspend fun fetchDataFromAudio(name: String, data: ByteArray) {
+        _isLoading.value = true
+        _errorMessage.value = null
+        _uploadSuccess.value = false
+
+        try {
+            Log.d("PdfViewModel", "🎵 Starting audio processing: $name")
+
+            val audioSummary = repository.extractTextFromAudio(name, data)
+            if (audioSummary.isNotEmpty()) {
+                _recognizedText.value = audioSummary
+            } else {
+                _recordingError.value = "Error processing audio"
+            }
+
+        } catch (e: Exception) {
+            Log.e("PdfViewModel", "❌ Error processing audio file: $name", e)
+            _errorMessage.value = "Failed to process audio file: ${e.message}"
+        } finally {
+            _isLoading.value = false
         }
     }
 
@@ -176,7 +222,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getPdfById(id: Long): PdfEntity? {
         return repository.getPdfById(id)
     }
-    
+
     /**
      * Get the original file from local storage.
      *
@@ -186,7 +232,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun getOriginalFile(pdfEntity: PdfEntity): java.io.File? {
         return repository.getOriginalFile(pdfEntity)
     }
-    
+
     /**
      * Check if the original file exists in local storage.
      *
@@ -196,7 +242,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun hasOriginalFile(pdfEntity: PdfEntity): Boolean {
         return repository.hasOriginalFile(pdfEntity)
     }
-    
+
     /**
      * Get the size of the original file in local storage.
      *
@@ -206,7 +252,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun getOriginalFileSize(pdfEntity: PdfEntity): Long {
         return repository.getOriginalFileSize(pdfEntity)
     }
-    
+
     /**
      * Clear all data from the database.
      * This is useful when schema changes require a fresh start.
@@ -216,7 +262,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            
+
             try {
                 repository.clearAllData()
                 _pdfs.value = emptyList()
@@ -228,10 +274,10 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    
+
     /**
      * Check if the database is empty.
-     * 
+     *
      * @return True if no data exists, false otherwise
      */
     fun isDatabaseEmpty(): Boolean {
@@ -254,13 +300,13 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 // Extract video ID from URL
                 val videoId = YouTubeTranscriptApi.extractVideoId(youtubeUrl)
-                
+
                 // Fetch the raw transcript using the new module
                 val transcriptSegments = YouTubeTranscriptApi.getTranscript(
                     videoId = videoId,
                     languages = listOf(language)
                 )
-                
+
                 // Convert segments to text
                 val transcript = transcriptSegments.joinToString(" ") { it.text }
                 _transcriptText.value = transcript
@@ -319,12 +365,120 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         return _isFetchingTranscript.value || _isSummarizingTranscript.value
     }
 
-    
+    /**
+     * Update recognized text from speech recognition.
+     */
+    fun updateRecognizedText(text: String) {
+        _recognizedText.value = text
+        _speechError.value = null
+    }
+
+    /**
+     * Update speech recognition error.
+     */
+    fun updateSpeechError(error: String) {
+        _speechError.value = error
+    }
+
+    /**
+     * Clear speech recognition data.
+     */
+    fun clearSpeechData() {
+        _recognizedText.value = ""
+        _speechError.value = null
+    }
+
+    /**
+     * Start audio recording with permission check.
+     */
+    fun startAudioRecording(permissionHelper: com.bigcash.ai.vectordb.utils.PermissionHelper) {
+        if (!permissionHelper.isAudioPermissionGranted()) {
+            Log.d("PdfViewModel", "Audio permission not granted, requesting...")
+            permissionHelper.requestAudioPermission { granted ->
+                if (granted) {
+                    Log.d("PdfViewModel", "Audio permission granted, starting recording")
+                    startRecording()
+                } else {
+                    Log.e("PdfViewModel", "Audio permission denied")
+                    _recordingError.value = "Microphone permission is required for audio recording"
+                }
+            }
+        } else {
+            startRecording()
+        }
+    }
+
+    /**
+     * Internal method to start recording after permission is confirmed.
+     */
+    private fun startRecording() {
+        viewModelScope.launch {
+            try {
+                _recordingError.value = null
+                val filePath = audioRecorderService.startRecording()
+                if (filePath != null) {
+                    _isRecording.value = true
+                    Log.d("PdfViewModel", "Recording started: $filePath")
+                } else {
+                    _recordingError.value = "Failed to start audio recording"
+                    Log.e("PdfViewModel", "Failed to start recording")
+                }
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "Error starting recording", e)
+                _recordingError.value = "Error starting recording: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * Stop audio recording and process the recorded audio.
+     */
+    fun stopAudioRecording() {
+        viewModelScope.launch {
+            try {
+                if (!audioRecorderService.isRecording()) {
+                    Log.w("PdfViewModel", "No active recording to stop")
+                    _recordingError.value = "No active recording to stop"
+                    return@launch
+                }
+
+                val recordingResult = audioRecorderService.stopRecording()
+                _isRecording.value = false
+
+                if (recordingResult != null) {
+                    val (fileName, audioData) = recordingResult
+                    Log.d("PdfViewModel", "Recording stopped: $fileName, processing with AI...")
+
+                    // Process the recorded audio using your existing flow
+                    fetchDataFromAudio(fileName, audioData)
+                } else {
+                    _recordingError.value = "Failed to save recorded audio"
+                    Log.e("PdfViewModel", "Failed to get recording data")
+                }
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "Error stopping recording", e)
+                _recordingError.value = "Error stopping recording: ${e.message}"
+                _isRecording.value = false
+            }
+        }
+    }
+
+
+    /**
+     * Clear recording error message.
+     */
+    fun clearRecordingError() {
+        _recordingError.value = null
+    }
+
     /**
      * Clean up resources when ViewModel is destroyed.
      */
     override fun onCleared() {
         super.onCleared()
+        // Release audio recorder resources
+        audioRecorderService.release()
         repository.cleanup()
+        Log.d("PdfViewModel", "ViewModel cleared - all resources cleaned up")
     }
 }

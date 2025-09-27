@@ -19,6 +19,7 @@ class MlKitTextExtractor(private val context: Context) {
         private val PDF_EXTENSIONS = setOf("pdf")
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
         private val DOCUMENT_EXTENSIONS = setOf("doc", "docx", "txt", "rtf", "odt")
+        private val AUDIO_EXTENSIONS = setOf("mp3", "wav", "ogg")
     }
 
     private val firebaseAiService = FirebaseAiService(context)
@@ -63,6 +64,10 @@ class MlKitTextExtractor(private val context: Context) {
                         Log.w(VECTOR_DEBUG_TAG, "⚠️ MlKitTextExtractor: Unsupported file type, using generic AI analysis")
                         firebaseAiService.generateContentFromFile(fileName, fileData, FirebaseAiService.FileType.UNSUPPORTED)
                     }
+                    FileType.AUDIO -> {
+                        Log.w(VECTOR_DEBUG_TAG, "⚠️ MlKitTextExtractor: Audio file type, using generic AI analysis")
+                        firebaseAiService.generateContentFromFile(fileName, fileData, FirebaseAiService.FileType.AUDIO)
+                    }
                 }
 
                 Log.d(VECTOR_DEBUG_TAG, "✅ MlKitTextExtractor: AI content generation completed")
@@ -99,6 +104,7 @@ class MlKitTextExtractor(private val context: Context) {
             extension in PDF_EXTENSIONS -> FileType.PDF
             extension in IMAGE_EXTENSIONS -> FileType.IMAGE
             extension in DOCUMENT_EXTENSIONS -> FileType.DOCUMENT
+            extension in AUDIO_EXTENSIONS -> FileType.AUDIO
             else -> FileType.UNSUPPORTED
         }
     }
@@ -118,6 +124,7 @@ class MlKitTextExtractor(private val context: Context) {
         PDF,
         IMAGE,
         DOCUMENT,
-        UNSUPPORTED
+        UNSUPPORTED,
+        AUDIO
     }
 }

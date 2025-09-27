@@ -137,16 +137,23 @@ class PdfRepository(private val context: Context) {
             ""
         }
     }
-    
-    /**
-     * Legacy method for backward compatibility.
-     * @deprecated Use extractTextFromPdf(fileName, data) instead
-     */
-    @Deprecated("Use extractTextFromPdf(fileName, data) for better file type detection")
-    suspend fun extractTextFromPdf(data: ByteArray): String = withContext(Dispatchers.IO) {
-        return@withContext extractTextFromPdf("unknown.pdf", data)
+    suspend fun extractTextFromAudio(fileName: String, data: ByteArray): String = withContext(Dispatchers.IO) {
+        Log.d(TAG, "📖 Repository: Starting text extraction from Audio: $fileName")
+        Log.d(TAG, "📊 Repository: Audio data size: ${data.size} bytes")
+        Log.d(TAG, "📊 Repository: Audio data : $data")
+
+        try {
+            val extractedText = pdfTextExtractor.extractTextFromPdf(fileName, data)
+            Log.d(TAG, "✅ Repository: Text extraction completed successfully")
+            Log.d(TAG, "📊 Repository: Extracted text length: ${extractedText.length}")
+            extractedText
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Repository: Error extracting text from audio file", e)
+            ""
+        }
     }
-    
+
+
     /**
      * Generate embedding from text using the configured embedding service.
      *
@@ -236,7 +243,7 @@ class PdfRepository(private val context: Context) {
             return@withContext null
         }
     }
-    
+
     /**
      * Update an existing PDF entity.
      *
@@ -245,185 +252,6 @@ class PdfRepository(private val context: Context) {
      */
     suspend fun updatePdf(pdfEntity: PdfEntity): Long = withContext(Dispatchers.IO) {
         pdfBox.put(pdfEntity)
-    }
-
-    
-    /**
-     * Perform intelligent search that tries name matching first, then falls back to vector search.
-     * This method is designed to return more precise results for specific document requests.
-     *
-     * @param queryText The user's natural language query
-     * @param topK Number of top results to return (default: 3)
-     * @return List of most relevant PDFs with similarity scores
-     */
-    suspend fun intelligentSearch(queryText: String, topK: Int = 3): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "🔍 Repository: Starting intelligent search")
-        Log.d(TAG, "📝 Repository: Query: '$queryText'")
-        Log.d(TAG, "📊 Repository: Top K: $topK")
-        
-        try {
-            // Check if this is a specific document request
-            val isSpecificRequest = isSpecificDocumentRequest(queryText)
-            Log.d(TAG, "📊 Repository: Is specific document request: $isSpecificRequest")
-            
-            // First, try to find documents by name matching
-            val nameMatchResults = tryNameBasedSearch(queryText)
-            if (nameMatchResults.isNotEmpty()) {
-                Log.d(TAG, "✅ Repository: Found ${nameMatchResults.size} documents by name matching")
-                
-                // If it's a specific request, return only the best match
-                if (isSpecificRequest && nameMatchResults.isNotEmpty()) {
-                    val bestMatch = nameMatchResults.take(1)
-                    Log.d(TAG, "🎯 Repository: Specific request - returning only best match: ${bestMatch.first().first.name}")
-                    return@withContext bestMatch
-                }
-                
-                return@withContext nameMatchResults
-            }
-            
-            // If no name matches, fall back to vector search
-            Log.d(TAG, "🔄 Repository: No name matches found, falling back to vector search")
-            val vectorResults = vectorSearch(queryText, topK)
-            
-            // If it's a specific request and we have vector results, return only the best match
-            if (isSpecificRequest && vectorResults.isNotEmpty()) {
-                val bestMatch = vectorResults.take(1)
-                Log.d(TAG, "🎯 Repository: Specific request - returning only best vector match: ${bestMatch.first().first.name}")
-                return@withContext bestMatch
-            }
-            
-            return@withContext vectorResults
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Repository: Error in intelligent search", e)
-            return@withContext emptyList()
-        }
-    }
-    
-    /**
-     * Check if the query is asking for a specific document.
-     * This helps determine whether to return only the best match or multiple results.
-     */
-    private fun isSpecificDocumentRequest(query: String): Boolean {
-        val specificRequestPatterns = listOf(
-            "give me my",
-            "show me my",
-            "find my",
-            "where is my",
-            "get my",
-            "i need my",
-            "can you show",
-            "can you give",
-            "can you find",
-            "show me the",
-            "give me the",
-            "find the",
-            "where is the",
-            "get the",
-            "i need the"
-        )
-        
-        val queryLower = query.lowercase()
-        return specificRequestPatterns.any { pattern -> queryLower.contains(pattern) }
-    }
-    
-    /**
-     * Try to find documents by analyzing the query for document names or types.
-     * This method looks for specific document types and names in the query.
-     *
-     * @param queryText The user's query
-     * @return List of matching documents with high similarity scores
-     */
-    private suspend fun tryNameBasedSearch(queryText: String): List<Pair<PdfEntity, Float>> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "🔍 Repository: Trying name-based search for: '$queryText'")
-        
-        val query = queryText.lowercase().trim()
-        val results = mutableListOf<Pair<PdfEntity, Float>>()
-        
-        // Get all PDFs for analysis
-        val allPdfs = pdfBox.all
-        Log.d(TAG, "📊 Repository: Analyzing ${allPdfs.size} documents for name matches")
-        
-        for (pdf in allPdfs) {
-            val pdfName = pdf.name.lowercase()
-            var similarity = 0.0f
-            
-            // Check for exact name matches
-            if (pdfName.contains(query) || query.contains(pdfName)) {
-                similarity = 1.0f
-                Log.d(TAG, "✅ Repository: Exact name match found: ${pdf.name}")
-            }
-            // Check for document type matches
-            else if (isDocumentTypeMatch(query, pdfName)) {
-                similarity = 0.9f
-                Log.d(TAG, "✅ Repository: Document type match found: ${pdf.name}")
-            }
-            // Check for partial name matches
-            else if (hasSignificantNameOverlap(query, pdfName)) {
-                similarity = 0.8f
-                Log.d(TAG, "✅ Repository: Partial name match found: ${pdf.name}")
-            }
-            
-            if (similarity > 0.7f) {
-                results.add(Pair(pdf, similarity))
-            }
-        }
-        
-        // Sort by similarity score (highest first) and limit results
-        val sortedResults = results.sortedByDescending { it.second }
-        Log.d(TAG, "📊 Repository: Name-based search found ${sortedResults.size} matches")
-        
-        return@withContext sortedResults
-    }
-    
-    /**
-     * Check if the query matches a specific document type.
-     */
-    private fun isDocumentTypeMatch(query: String, pdfName: String): Boolean {
-        val documentTypes = mapOf(
-            "pan" to listOf("pan", "pancard", "pan card", "pan-card"),
-            "aadhar" to listOf("aadhar", "aadhaar", "aadhar card", "aadhaar card"),
-            "passport" to listOf("passport"),
-            "license" to listOf("license", "driving", "dl", "driving license"),
-            "voter" to listOf("voter", "voter id", "voterid"),
-            "bank" to listOf("bank", "statement", "passbook"),
-            "salary" to listOf("salary", "payslip", "pay slip"),
-            "invoice" to listOf("invoice", "bill", "receipt"),
-            "contract" to listOf("contract", "agreement"),
-            "certificate" to listOf("certificate", "cert", "degree", "diploma")
-        )
-        
-        for ((type, keywords) in documentTypes) {
-            if (query.contains(type)) {
-                for (keyword in keywords) {
-                    if (pdfName.contains(keyword)) {
-                        return true
-                    }
-                }
-            }
-        }
-        return false
-    }
-    
-    /**
-     * Check if there's significant overlap between query and PDF name.
-     */
-    private fun hasSignificantNameOverlap(query: String, pdfName: String): Boolean {
-        val queryWords = query.split("\\s+".toRegex()).filter { it.length > 2 }
-        val nameWords = pdfName.split("\\s+".toRegex()).filter { it.length > 2 }
-        
-        var matches = 0
-        for (queryWord in queryWords) {
-            for (nameWord in nameWords) {
-                if (queryWord in nameWord || nameWord in queryWord) {
-                    matches++
-                    break
-                }
-            }
-        }
-        
-        // Consider it a match if at least 50% of query words match
-        return matches >= (queryWords.size * 0.5)
     }
 
     /**

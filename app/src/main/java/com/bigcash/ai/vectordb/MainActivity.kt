@@ -13,6 +13,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bigcash.ai.vectordb.ui.ChatScreen
 import com.bigcash.ai.vectordb.ui.PdfManagementScreen
 import com.bigcash.ai.vectordb.ui.theme.VectordbTheme
+import com.bigcash.ai.vectordb.utils.PermissionHelper
 import com.bigcash.ai.vectordb.viewmodel.ChatViewModel
 import com.bigcash.ai.vectordb.viewmodel.PdfViewModel
 
@@ -21,13 +22,21 @@ import com.bigcash.ai.vectordb.viewmodel.PdfViewModel
  * This activity hosts the main UI for PDF management functionality.
  */
 class MainActivity : ComponentActivity() {
+
+    private lateinit var permissionHelper: PermissionHelper
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize permission helper
+        permissionHelper = PermissionHelper(this)
+
         enableEdgeToEdge()
         setContent {
             VectordbTheme {
                 MainContent(
-                    modifier = Modifier
+                    modifier = Modifier,
+                    permissionHelper = permissionHelper
                 )
             }
         }
@@ -41,7 +50,8 @@ class MainActivity : ComponentActivity() {
 fun MainContent(
     modifier: Modifier = Modifier,
     pdfViewModel: PdfViewModel = viewModel(),
-    chatViewModel: ChatViewModel = viewModel()
+    chatViewModel: ChatViewModel = viewModel(),
+    permissionHelper: PermissionHelper
 ) {
     var currentScreen by remember { mutableStateOf(Screen.PdfManagement) }
     
@@ -51,7 +61,8 @@ fun MainContent(
                 PdfManagementScreen(
                     viewModel = pdfViewModel,
                     onNavigateToChat = { currentScreen = Screen.Chat },
-                    modifier = Modifier.padding(innerPadding)
+                    modifier = Modifier.padding(innerPadding),
+                    permissionHelper = permissionHelper
                 )
             }
 

@@ -118,7 +118,7 @@ dependencies {
 
 
     // YouTube Transcript Kotlin module
-    implementation(project(":youtube-transcript-kotlin"))
+    implementation("com.github.vibhor-kulshrestha:youtube-transcript-kotlin:v1.0.5")
 
 
 }

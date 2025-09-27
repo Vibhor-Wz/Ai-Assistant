@@ -199,9 +199,12 @@ class FirebaseAiService(private val context: Context) {
             "7z" -> "application/x-7z-compressed"
 
             // Audio
-            "mp3" -> "audio/mpeg"
+            "mp3" -> "audio/mp3"
             "wav" -> "audio/wav"
             "ogg" -> "audio/ogg"
+            "aiff" -> "audio/aiff"
+            "aac" -> "audio/aac"
+            "flac" -> "aaudio/flac"
 
             // Video
             "mp4" -> "video/mp4"
@@ -210,10 +213,6 @@ class FirebaseAiService(private val context: Context) {
 
             else -> "application/octet-stream"
         }
-    }
-
-    private fun ByteArray.toBitmap(): Bitmap {
-        return BitmapFactory.decodeByteArray(this, 0, this.size)
     }
 
     /**
@@ -225,7 +224,37 @@ class FirebaseAiService(private val context: Context) {
             FileType.IMAGE -> createImagePrompt(fileName, fileData)
             FileType.DOCUMENT -> createDocumentPrompt(fileName, fileData)
             FileType.UNSUPPORTED -> createGenericPrompt(fileName, fileData)
+            FileType.AUDIO -> createAudioPrompt()
         }
+    }
+
+    private fun createAudioPrompt(): String {
+        return """
+            You are an AI audio analysis and summarization system.  
+            Your task is to process the given audio transcript and decide how to respond based on the content type.  
+ 
+            1. **Audio Type Detection**  
+            - If the audio is **generic voice content** (e.g., casual speech, music, short generic sentences, background noise, unrelated chatter, or single unrelated phrases), then:  
+            → Do not generate a meeting summary.  
+            → Instead, provide a **simple and concise generic response** describing the content.  
+ 
+            - If the audio is a **meeting/discussion/conversational context** (two or more people talking, or a single speaker presenting/explaining a topic in detail, such as business, planning, brainstorming, or structured context), then:  
+            → Identify it as a "Meeting/Contextual Discussion".  
+            → Generate a **clear, structured summary** covering:  
+            - Main topics discussed  
+            - Key points raised by speakers  
+            - Decisions or outcomes (if any)  
+            - Action items or follow-ups (if mentioned)  
+ 
+            2. **Output Rules**  
+            - Always first state the **detected audio type**: "Generic Audio" or "Meeting/Discussion".  
+            - Then provide the appropriate response (generic description or structured summary).  
+            - Keep responses concise but informative.  
+ 
+            3. **Tone**  
+            - Neutral, professional, and easy to understand.  
+            - Do not invent details not supported by the audio transcript.  
+        """.trimIndent()
     }
 
     /**
@@ -767,6 +796,7 @@ class FirebaseAiService(private val context: Context) {
         PDF,
         IMAGE,
         DOCUMENT,
-        UNSUPPORTED
+        UNSUPPORTED,
+        AUDIO
     }
 }
