@@ -20,6 +20,7 @@ class MlKitTextExtractor(private val context: Context) {
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
         private val DOCUMENT_EXTENSIONS = setOf("doc", "docx", "txt", "rtf", "odt")
         private val AUDIO_EXTENSIONS = setOf("mp3", "wav", "ogg", "aac", "m4a", "wma", "flac")
+        private val YOUTUBE_URL_PATTERNS = setOf("youtube.com", "youtu.be", "m.youtube.com")
     }
 
     private val firebaseAiService = FirebaseAiService(context)
@@ -64,6 +65,11 @@ class MlKitTextExtractor(private val context: Context) {
                         Log.d(VECTOR_DEBUG_TAG, "🎵 MlKitTextExtractor: Processing audio file with Firebase AI")
                         Log.d(VECTOR_DEBUG_TAG, "📊 MlKitTextExtractor: Audio file size: ${fileData.size} bytes")
                         firebaseAiService.generateContentFromFile(fileName, fileData, FirebaseAiService.FileType.AUDIO)
+                    }
+
+                    FileType.YOUTUBEURL -> {
+                        Log.d(VECTOR_DEBUG_TAG, "📺 MlKitTextExtractor: Processing YouTube URL with Firebase AI")
+                        firebaseAiService.generateContentFromFile(fileName, fileData, FirebaseAiService.FileType.YOUTUBEURL)
                     }
 
                     FileType.UNSUPPORTED -> {
@@ -121,11 +127,22 @@ class MlKitTextExtractor(private val context: Context) {
                 Log.d(VECTOR_DEBUG_TAG, "🎵 MlKitTextExtractor: Detected as AUDIO file")
                 FileType.AUDIO
             }
+            isYouTubeUrl(fileName) -> {
+                Log.d(VECTOR_DEBUG_TAG, "📺 MlKitTextExtractor: Detected as YOUTUBE URL")
+                FileType.YOUTUBEURL
+            }
             else -> {
                 Log.d(VECTOR_DEBUG_TAG, "⚠️ MlKitTextExtractor: Detected as UNSUPPORTED file type")
                 FileType.UNSUPPORTED
             }
         }
+    }
+
+    /**
+     * Check if the given string is a YouTube URL.
+     */
+    private fun isYouTubeUrl(input: String): Boolean {
+        return YOUTUBE_URL_PATTERNS.any { pattern -> input.contains(pattern, ignoreCase = true) }
     }
 
     /**
@@ -144,6 +161,7 @@ class MlKitTextExtractor(private val context: Context) {
         IMAGE,
         DOCUMENT,
         AUDIO,
+        YOUTUBEURL,
         UNSUPPORTED
     }
 }

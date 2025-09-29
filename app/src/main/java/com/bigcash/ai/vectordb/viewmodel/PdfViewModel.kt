@@ -349,6 +349,41 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Process YouTube URL and generate summary using Gemini 2.5 Flash.
+     */
+    fun processYouTubeUrl(youtubeUrl: String) {
+        viewModelScope.launch {
+            _isFetchingTranscript.value = true
+            _transcriptError.value = null
+            _transcriptText.value = ""
+            _summaryText.value = ""
+
+            try {
+                Log.d(TAG, "📺 Processing YouTube URL: $youtubeUrl")
+                
+                // Convert URL to byte array for processing
+                val urlBytes = youtubeUrl.toByteArray(Charsets.UTF_8)
+                
+                // Generate content using Firebase AI service with Gemini 2.5 Flash
+                val summary = firebaseAiService.generateContentFromFile(
+                    youtubeUrl, 
+                    urlBytes, 
+                    FirebaseAiService.FileType.YOUTUBEURL
+                )
+                
+                _summaryText.value = summary
+                Log.d(TAG, "✅ YouTube URL processed successfully with Gemini 2.5 Flash")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error processing YouTube URL", e)
+                _transcriptError.value = "Failed to process YouTube URL: ${e.message}"
+            } finally {
+                _isFetchingTranscript.value = false
+            }
+        }
+    }
+
+    /**
      * Start audio recording.
      */
     fun startAudioRecording() {

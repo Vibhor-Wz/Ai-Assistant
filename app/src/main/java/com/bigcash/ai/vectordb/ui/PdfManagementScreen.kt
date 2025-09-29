@@ -307,6 +307,20 @@ fun PdfManagementScreen(
                         Text(if (isRecording) "Stop Recording" else "Voice Recording")
                     }
 
+                    // YouTube Script Button
+                    Button(
+                        onClick = { 
+                            Log.d(UI_DEBUG_TAG, "📺 YouTube Script button clicked")
+                            showYouTubeDialog = true 
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading && !isFetchingTranscript && !isSummarizingTranscript
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "YouTube Script")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("YouTube Script")
+                    }
+
                     // Recording status indicator
                     if (isRecording || isProcessingAudio || audioError != null) {
                         Row(
@@ -342,7 +356,7 @@ fun PdfManagementScreen(
                 }
 
                 Text(
-                    text = "Supports PDF files, images (JPG, PNG, etc.), documents (DOC, TXT, etc.), YouTube transcripts, and voice recordings",
+                    text = "Supports PDF files, images (JPG, PNG, etc.), documents (DOC, TXT, etc.), YouTube transcripts, YouTube Scripts, and voice recordings",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
@@ -466,7 +480,8 @@ fun PdfManagementScreen(
             url = youtubeUrl,
             onUrlChange = { youtubeUrl = it },
             onConfirm = {
-                viewModel.fetchYouTubeTranscript(youtubeUrl, "en")
+//                viewModel.fetchYouTubeTranscript(youtubeUrl, "en")
+                viewModel.processYouTubeUrl(youtubeUrl)
                 // Don't close dialog immediately - let LaunchedEffect handle it
             },
             onDismiss = {
@@ -609,10 +624,10 @@ fun YouTubeUrlDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("YouTube Transcript") },
+        title = { Text("YouTube Script") },
         text = {
             Column {
-                Text("Enter a YouTube URL to fetch its transcript:")
+                Text("Enter a YouTube URL to generate a summary using Gemini 2.5 Flash:")
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = url,
@@ -641,7 +656,7 @@ fun YouTubeUrlDialog(
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp))
                         Text(
-                            text = if (isSummarizing) "Summarizing transcript..." else "Fetching transcript...",
+                            text = if (isSummarizing) "Generating summary with Gemini 2.5 Flash..." else "Processing YouTube URL...",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -653,7 +668,7 @@ fun YouTubeUrlDialog(
                 onClick = onConfirm,
                 enabled = url.isNotBlank() && !isLoading
             ) {
-                Text("Fetch Transcript")
+                Text("Generate Summary")
             }
         },
         dismissButton = {
@@ -725,7 +740,7 @@ fun SummaryDisplayDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    
+
     // Initialize Markwon for markdown rendering
     val markwon = remember {
         Markwon.builder(context)
@@ -737,15 +752,15 @@ fun SummaryDisplayDialog(
             .usePlugin(TaskListPlugin.create(context))
             .build()
     }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { 
+        title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("📺 YouTube Video Summary")
+                Text("📺 YouTube Script Summary")
             }
         },
         text = {
@@ -755,12 +770,12 @@ fun SummaryDisplayDialog(
                     .heightIn(max = 500.dp)
             ) {
                 Text(
-                    text = "AI-Generated Summary:",
+                    text = "AI-Generated Summary (Gemini 2.5 Flash):",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 if (summary.isNotEmpty()) {
                     // Use Markwon to render markdown
                     AndroidView(

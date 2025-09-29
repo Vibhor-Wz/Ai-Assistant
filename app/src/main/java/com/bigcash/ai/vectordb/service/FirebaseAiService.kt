@@ -132,8 +132,15 @@ class FirebaseAiService(private val context: Context) {
 
             val response = generativeModel.generateContent(
                 content {
-                    val mimeType = getMimeTypeForFile(fileName)
-                    inlineData(fileData, mimeType)
+                    if (fileType == FileType.YOUTUBEURL) {
+                        // For YouTube URLs, use fileData with URI instead of inlineData
+                        val normalizedUrl = normalizeYouTubeUrl(fileName)
+                        fileData(uri = normalizedUrl, mimeType = "video/youtube")
+                    } else {
+                        // For other file types, use inlineData as before
+                        val mimeType = getMimeTypeForFile(fileName)
+                        inlineData(fileData, mimeType)
+                    }
                     text(prompt)
                 }
             )
@@ -225,6 +232,7 @@ class FirebaseAiService(private val context: Context) {
             FileType.IMAGE -> createImagePrompt(fileName, fileData)
             FileType.DOCUMENT -> createDocumentPrompt(fileName, fileData)
             FileType.AUDIO -> createAudioPrompt(fileName, fileData)
+            FileType.YOUTUBEURL -> createYouTubeUrlPrompt(fileName, fileData)
             FileType.UNSUPPORTED -> createGenericPrompt(fileName, fileData)
         }
     }
@@ -823,6 +831,93 @@ class FirebaseAiService(private val context: Context) {
     }
 
     /**
+     * Normalize YouTube URL to watch format.
+     */
+    private fun normalizeYouTubeUrl(url: String): String {
+        return when {
+            url.contains("youtu.be/") -> {
+                val videoId = url.substringAfter("youtu.be/").substringBefore("?")
+                "https://www.youtube.com/watch?v=$videoId"
+            }
+            url.contains("youtube.com/watch") -> url
+            url.contains("m.youtube.com") -> url.replace("m.youtube.com", "www.youtube.com")
+            else -> url
+        }
+    }
+
+    /**
+     * Create prompt for YouTube URL files.
+     */
+    private fun createYouTubeUrlPrompt(fileName: String, fileData: ByteArray): String {
+        val urlContent = String(fileData, Charsets.UTF_8)
+        Log.d(TAG, "📺 Creating YouTube URL prompt for: $fileName")
+        Log.d(TAG, "📊 URL content length: ${urlContent.length}")
+
+        return """
+        You are an AI assistant specialized in processing YouTube URLs and generating comprehensive summaries using Gemini 2.5 Flash.
+
+        YouTube URL Information:
+        - URL: $urlContent
+        - Type: YouTube Video URL
+        - Processing: Using Gemini 2.5 Flash for advanced analysis
+
+        Task:
+        1. Analyze the YouTube video content and generate a comprehensive summary.
+        2. Extract video metadata, title, description, and key information.
+        3. Identify the main topics, themes, and content categories.
+        4. Provide insights about the video's purpose and target audience.
+        5. Generate a structured summary with clear sections.
+        6. Include relevant tags and categories for better organization.
+        7. Create actionable insights and key takeaways.
+        8. Format the output in markdown for better readability.
+
+        Output Format:
+        ## 📺 YouTube Video Summary
+        
+        ### 📋 Video Information
+        - **URL:** $urlContent
+        - **Video ID:** [extracted from URL]
+        - **Platform:** YouTube
+        
+        ### 🎯 Main Topics
+        - List the main topics and themes covered in the video
+        
+        ### 🔑 Key Points
+        - Highlight the most important points and insights from the video
+        
+        ### 📝 Content Summary
+        - Provide a comprehensive summary of the video content
+        - Include main arguments, discussions, or presentations
+        
+        ### 🎬 Video Details
+        - **Category:** [if determinable from URL patterns]
+        - **Content Type:** [educational, entertainment, tutorial, etc.]
+        - **Target Audience:** [if determinable]
+        
+        ### 💡 Key Takeaways
+        - List the main takeaways and actionable insights
+        - Include any valuable information or lessons
+        
+        ### 🏷️ Tags
+        - Suggest relevant tags or categories for this video content
+        - Include topic-based tags for better searchability
+        
+        ### 🔗 Related Content
+        - Suggest related topics or similar content areas
+        - Include any follow-up recommendations
+
+        Important:
+        - Use **bold** for important points and key information
+        - Use *italics* for emphasis
+        - Use bullet points (-) for lists
+        - Use numbered lists (1., 2., etc.) for step-by-step information
+        - Use > blockquotes for important quotes or key statements
+        - Make the summary comprehensive and well-structured
+        - Focus on the educational or informational value of the content
+        """.trimIndent()
+    }
+
+    /**
      * Enum for supported file types.
      */
     enum class FileType {
@@ -830,6 +925,7 @@ class FirebaseAiService(private val context: Context) {
         IMAGE,
         DOCUMENT,
         AUDIO,
+        YOUTUBEURL,
         UNSUPPORTED
     }
 }
