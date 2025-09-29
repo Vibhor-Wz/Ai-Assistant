@@ -8,7 +8,10 @@ import com.google.firebase.Firebase
 import com.google.firebase.ai.GenerativeModel
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.ImagePart
+import com.google.firebase.ai.type.ResponseModality
 import com.google.firebase.ai.type.content
+import com.google.firebase.ai.type.generationConfig
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -30,6 +33,15 @@ class FirebaseAiService(private val context: Context) {
     private val generativeModel: GenerativeModel by lazy {
         Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
             modelName = "gemini-2.5-flash" // update from 1.5
+        )
+    }
+    
+    private val imageGenerativeModel: GenerativeModel by lazy {
+        Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+            modelName = "gemini-2.5-flash-image-preview",
+            generationConfig = generationConfig {
+                responseModalities = listOf(ResponseModality.TEXT, ResponseModality.IMAGE)
+            }
         )
     }
 
@@ -791,6 +803,114 @@ class FirebaseAiService(private val context: Context) {
         
         **Full Transcript Length:** ${transcript.length} characters
         """.trimIndent()
+    }
+
+
+    /**
+     * Generate image variations from an existing image.
+     *
+     * @param imageData Original image as byte array
+     * @param variationPrompt Optional prompt for specific variations
+     * @return Generated image variation as Bitmap
+     */
+    suspend fun editImage(imageData: ByteArray, variationPrompt: String? = null): Bitmap? = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🔄 FirebaseAiService: Generating image variations")
+
+        try {
+            if (!ensureAuthenticated()) {
+                Log.w(TAG, "⚠️ FirebaseAiService: Authentication failed for image variations")
+                return@withContext null
+            }
+
+            // Convert byte array to Bitmap
+            val bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size)
+            if (bitmap == null) {
+                Log.e(TAG, "❌ FirebaseAiService: Failed to decode image from byte array")
+                return@withContext null
+            }
+
+            val prompt = variationPrompt ?: "Change the background of this image"
+            Log.d(TAG, "📝 FirebaseAiService: Using prompt: '$prompt'")
+
+            // Use the official API pattern with content block
+            val response = imageGenerativeModel.generateContent(
+                content {
+                    image(bitmap)
+                    text(prompt)
+                }
+            )
+            
+            val generatedImageAsBitmap = response
+                .candidates.first().content.parts.filterIsInstance<ImagePart>().firstOrNull()?.image
+            
+            if (generatedImageAsBitmap != null) {
+                Log.d(TAG, "✅ FirebaseAiService: Image variation generated successfully")
+            } else {
+                Log.w(TAG, "⚠️ FirebaseAiService: No image generated in response")
+            }
+            
+            return@withContext generatedImageAsBitmap
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FirebaseAiService: Error generating image variations", e)
+            return@withContext null
+        }
+    }
+
+    /**
+     * Alternative image editing using chat-based approach (more reliable for follow-up edits).
+     * This follows the official Gemini API documentation pattern.
+     *
+     * @param imageData Original image as byte array
+     * @param variationPrompt Optional prompt for specific variations
+     * @return Generated image variation as Bitmap
+     */
+    suspend fun editImageWithChat(imageData: ByteArray, variationPrompt: String? = null): Bitmap? = withContext(Dispatchers.IO) {
+        Log.d(TAG, "🔄 FirebaseAiService: Generating image variations with chat approach")
+
+        try {
+            if (!ensureAuthenticated()) {
+                Log.w(TAG, "⚠️ FirebaseAiService: Authentication failed for image variations")
+                return@withContext null
+            }
+
+            // Convert byte array to Bitmap
+            val bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size)
+            if (bitmap == null) {
+                Log.e(TAG, "❌ FirebaseAiService: Failed to decode image from byte array")
+                return@withContext null
+            }
+
+            val prompt = variationPrompt ?: "Change the background of this image"
+            Log.d(TAG, "📝 FirebaseAiService: Using prompt: '$prompt'")
+
+            // Initialize the chat
+            val chat = imageGenerativeModel.startChat()
+
+            // Create the initial prompt instructing the model to edit the image
+            val initialPrompt = content {
+                image(bitmap)
+                text(prompt)
+            }
+
+            // Send the initial message with image and text prompt
+            val response = chat.sendMessage(initialPrompt)
+            
+            val generatedImageAsBitmap = response
+                .candidates.first().content.parts.filterIsInstance<ImagePart>().firstOrNull()?.image
+            
+            if (generatedImageAsBitmap != null) {
+                Log.d(TAG, "✅ FirebaseAiService: Image variation generated successfully with chat")
+            } else {
+                Log.w(TAG, "⚠️ FirebaseAiService: No image generated in chat response")
+            }
+            
+            return@withContext generatedImageAsBitmap
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FirebaseAiService: Error generating image variations with chat", e)
+            return@withContext null
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +27,25 @@ import androidx.core.content.FileProvider
 import androidx.compose.ui.platform.LocalContext
 import android.util.Log
 import java.io.File
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.rememberAsyncImagePainter
+import java.io.FileOutputStream
+import java.io.InputStream
+import android.content.ContentValues
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.ui.graphics.asImageBitmap
+import android.graphics.BitmapFactory
 
 // TAG constants for logging
 private const val TAG = "VECTOR_DEBUG"
@@ -49,6 +69,20 @@ fun ChatScreen(
 
     var messageText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    // Gallery launcher
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            Log.d(TAG, "🖼️ ChatScreen: Image selected from gallery: $selectedUri")
+            // Create a temporary file to store the image
+            val tempFile = createTempImageFile(context, selectedUri)
+            tempFile?.let { file ->
+                chatViewModel.sendImageMessage(selectedUri.toString(), file)
+            }
+        }
+    }
 
     // Log screen initialization
     LaunchedEffect(Unit) {
@@ -142,7 +176,11 @@ fun ChatScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "AI is thinking...",
+                                        text = if (isImageEditRequest(messageText)) {
+                                            "AI is editing your image..."
+                                        } else {
+                                            "AI is thinking..."
+                                        },
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
@@ -185,6 +223,23 @@ fun ChatScreen(
                         .padding(8.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
+                    // Plus icon for gallery
+                    IconButton(
+                        onClick = {
+                            Log.d(TAG, "📷 ChatScreen: Opening gallery")
+                            galleryLauncher.launch("image/*")
+                        },
+                        enabled = !isLoading
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Image",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     OutlinedTextField(
                         value = messageText,
                         onValueChange = { messageText = it },
@@ -282,7 +337,40 @@ fun MessageBubble(
                 modifier = Modifier.padding(12.dp)
             ) {
                 if (message.isUser) {
-                    // User messages - plain text
+                    // User messages - text and images
+                    if (message.imageUri != null && message.imageFile != null) {
+                        // Display image with download button
+                        Column {
+                            Image(
+                                painter = rememberAsyncImagePainter(Uri.parse(message.imageUri)),
+                                contentDescription = "Selected image",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        Log.d(TAG, "💾 MessageBubble: Downloading image")
+                                        downloadImageToGallery(context, message.imageFile!!)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Build,
+                                        contentDescription = "Download Image",
+                                        tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                     Text(
                         text = message.text,
                         color = MaterialTheme.colorScheme.onPrimary,
@@ -295,6 +383,41 @@ fun MessageBubble(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    
+                    // Show edited image if this is an image edit response
+                    if (message.isImageEdit && message.imageUri != null && message.imageFile != null) {
+                        Log.d(TAG, "🖼️ MessageBubble: Displaying edited image")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column {
+                            Image(
+                                painter = rememberAsyncImagePainter(Uri.parse(message.imageUri)),
+                                contentDescription = "Edited image",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        Log.d(TAG, "💾 MessageBubble: Downloading edited image")
+                                        downloadImageToGallery(context, message.imageFile!!)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Build,
+                                        contentDescription = "Download Edited Image",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
                     
                     // Show file card if file is available and response is not TEXT_ONLY
                     if (message.pdfEntity != null) {
@@ -344,6 +467,24 @@ private fun formatTimestamp(timestamp: Long): String {
     val date = java.util.Date(timestamp)
     val formatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
     return formatter.format(date)
+}
+
+/**
+ * Check if the message is an image editing request.
+ * This is a simplified version for UI display purposes.
+ */
+private fun isImageEditRequest(message: String): Boolean {
+    val lowerMessage = message.lowercase()
+    val editKeywords = listOf(
+        "change background", "change the background", "edit background", "edit the background",
+        "modify background", "modify the background", "replace background", "replace the background",
+        "edit image", "edit the image", "modify image", "modify the image",
+        "change image", "change the image", "transform image", "transform the image"
+    )
+    
+    return editKeywords.any { keyword -> 
+        lowerMessage.contains(keyword) 
+    }
 }
 
 /**
@@ -412,4 +553,59 @@ private fun getMimeType(extension: String): String {
     
     Log.d(TAG, "📄 MimeTypeHelper: Extension '$extension' -> MIME type '$mimeType'")
     return mimeType
+}
+
+/**
+ * Create a temporary file to store the selected image.
+ */
+private fun createTempImageFile(context: android.content.Context, uri: Uri): File? {
+    return try {
+        val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+        val tempFile = File(context.cacheDir, "temp_image_${System.currentTimeMillis()}.jpg")
+        val outputStream = FileOutputStream(tempFile)
+        
+        inputStream?.use { input ->
+            outputStream.use { output ->
+                input.copyTo(output)
+            }
+        }
+        
+        Log.d(TAG, "📁 ImageHandler: Created temp file: ${tempFile.absolutePath}")
+        tempFile
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ ImageHandler: Error creating temp file", e)
+        null
+    }
+}
+
+/**
+ * Download image to external storage (gallery).
+ */
+private fun downloadImageToGallery(context: android.content.Context, imageFile: File) {
+    try {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "AI_Chat_${System.currentTimeMillis()}.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/AI_Chat")
+        }
+        
+        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        
+        uri?.let { imageUri ->
+            context.contentResolver.openOutputStream(imageUri)?.use { outputStream ->
+                imageFile.inputStream().use { inputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            
+            Toast.makeText(context, "Image saved to gallery", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "✅ ImageHandler: Image saved to gallery: $imageUri")
+        } ?: run {
+            Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "❌ ImageHandler: Failed to create image URI")
+        }
+    } catch (e: Exception) {
+        Toast.makeText(context, "Error saving image: ${e.message}", Toast.LENGTH_SHORT).show()
+        Log.e(TAG, "❌ ImageHandler: Error saving image", e)
+    }
 }

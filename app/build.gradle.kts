@@ -120,5 +120,7 @@ dependencies {
     // YouTube Transcript Kotlin module
     implementation("com.github.vibhor-kulshrestha:youtube-transcript-kotlin:v1.0.5")
 
+    // Coil for image loading
+    implementation("io.coil-kt:coil-compose:2.5.0")
 
 }
