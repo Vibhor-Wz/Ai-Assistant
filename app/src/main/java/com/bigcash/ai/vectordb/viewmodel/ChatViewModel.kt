@@ -321,27 +321,84 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun isImageEditRequest(message: String): Boolean {
         val lowerMessage = message.lowercase()
+        
+        // Look for ANY image in the entire conversation history, not just recent messages
+        val hasImageInConversation = _messages.value.any { 
+            it.isUser && it.imageFile != null && !it.isImageGenerated
+        }
+        
+        // If no image in conversation, definitely not an image edit request
+        if (!hasImageInConversation) {
+            Log.d(TAG, "🔍 ChatViewModel: No image in conversation")
+            return false
+        }
+        
+        // Much more comprehensive and flexible keyword detection
         val editKeywords = listOf(
-            "change background", "change the background", "edit background", "edit the background",
-            "modify background", "modify the background", "replace background", "replace the background",
-            "edit image", "edit the image", "modify image", "modify the image",
-            "change image", "change the image", "transform image", "transform the image"
+            // Direct editing commands
+            "edit", "modify", "change", "adjust", "enhance", "improve", "fix", "correct", "update",
+            "add", "remove", "replace", "resize", "crop", "rotate", "flip", "transform",
+            "make it", "turn it", "convert it", "style it", "redesign", "recreate",
+            
+            // Background related
+            "background", "backdrop", "scene", "setting", "environment",
+            
+            // Color and style related
+            "color", "colour", "style", "theme", "mood", "atmosphere", "tone",
+            "bright", "dark", "vibrant", "muted", "saturated", "desaturated",
+            
+            // Object and element related
+            "object", "person", "people", "face", "body", "clothing", "clothes",
+            "building", "car", "tree", "sky", "water", "landscape", "portrait",
+            
+            // Artistic terms
+            "artistic", "creative", "artistic style", "painting", "drawing", "sketch",
+            "photography", "photo", "image", "picture", "photo", "shot",
+            
+            // Quality and technical terms
+            "quality", "resolution", "sharp", "blur", "focus", "exposure",
+            "lighting", "shadow", "highlight", "contrast", "brightness",
+            
+            // Action words that could relate to image editing
+            "create", "generate", "make", "produce", "design", "compose",
+            "arrange", "organize", "structure", "layout", "composition"
         )
         
-        val hasImageInRecentMessages = _messages.value.takeLast(5).any { 
-            it.isUser && it.imageFile != null 
-        }
+        val variationKeywords = listOf(
+            "variations", "variation", "multiple", "different", "alternatives", "options",
+            "versions", "styles", "approaches", "interpretations", "renditions"
+        )
         
         val isEditRequest = editKeywords.any { keyword -> 
             lowerMessage.contains(keyword) 
         }
         
+        val isVariationRequest = variationKeywords.any { keyword -> 
+            lowerMessage.contains(keyword) 
+        }
+        
+        // Also check for common image editing phrases
+        val commonPhrases = listOf(
+            "make it look", "turn it into", "change it to", "make it more",
+            "make it less", "add some", "remove the", "replace with",
+            "instead of", "rather than", "like a", "as if", "in the style of"
+        )
+        
+        val hasCommonPhrase = commonPhrases.any { phrase ->
+            lowerMessage.contains(phrase)
+        }
+        
+        val isImageEdit = isEditRequest || isVariationRequest || hasCommonPhrase
+        
         Log.d(TAG, "🔍 ChatViewModel: Checking image edit request")
         Log.d(TAG, "   📝 Message: '$message'")
-        Log.d(TAG, "   🖼️ Has recent image: $hasImageInRecentMessages")
+        Log.d(TAG, "   🖼️ Has image in conversation: $hasImageInConversation")
         Log.d(TAG, "   ✏️ Is edit request: $isEditRequest")
+        Log.d(TAG, "   🎨 Is variation request: $isVariationRequest")
+        Log.d(TAG, "   💬 Has common phrase: $hasCommonPhrase")
+        Log.d(TAG, "   ✅ Final decision: $isImageEdit")
         
-        return hasImageInRecentMessages && isEditRequest
+        return isImageEdit
     }
     
     /**
@@ -352,13 +409,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleImageEditRequest(message: String) {
         Log.d(TAG, "🖼️ ChatViewModel: Handling image edit request")
         
-        // Find the most recent image from user messages
-        val recentImageMessage = _messages.value.takeLast(5).lastOrNull { 
-            it.isUser && it.imageFile != null 
-        }
+        // Check if this is a variation request
+        val lowerMessage = message.lowercase()
+        val isVariationRequest = listOf(
+            "variations", "variation", "multiple", "different", "alternatives", "options",
+            "create variations", "make variations", "generate variations", "show variations"
+        ).any { keyword -> lowerMessage.contains(keyword) }
         
+        // Find the most recent ORIGINAL image from user messages (not AI-generated images)
+        // Look through the entire conversation history to find the last user-uploaded image
+        val recentImageMessage =
+            _messages.value.lastOrNull { it.isUser && it.imageFile != null && !it.isImageGenerated }
+
         if (recentImageMessage?.imageFile != null) {
             Log.d(TAG, "📷 ChatViewModel: Found recent image: ${recentImageMessage.imageFile.name}")
+            Log.d(TAG, "🎨 ChatViewModel: Is variation request: $isVariationRequest")
             
             viewModelScope.launch {
                 try {
@@ -366,69 +431,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     val imageBytes = recentImageMessage.imageFile.readBytes()
                     Log.d(TAG, "📊 ChatViewModel: Image size: ${imageBytes.size} bytes")
                     
-                    // Extract edit prompt from message or use default
-                    val editPrompt = extractEditPrompt(message) ?: "Change the background of this image"
-                    Log.d(TAG, "✏️ ChatViewModel: Edit prompt: '$editPrompt'")
-                    
-                    // Call the editImage function (try both approaches for better reliability)
-                    var editedBitmap = firebaseAiService.editImage(imageBytes, editPrompt)
-                    
-                    // If the first approach fails, try the chat-based approach
-                    if (editedBitmap == null) {
-                        Log.w(TAG, "🔄 ChatViewModel: First edit attempt failed, trying chat-based approach")
-                        editedBitmap = firebaseAiService.editImageWithChat(imageBytes, editPrompt)
-                    }
-
-                    Log.d(TAG, "📊 ChatViewModel: Edited image size: ${editedBitmap?.byteCount ?: 0} bytes")
-                    if (editedBitmap != null) {
-                        Log.d(TAG, "✅ ChatViewModel: Image edited successfully")
-                        
-                        // Convert bitmap to byte array for storage
-                        val outputStream = java.io.ByteArrayOutputStream()
-                        editedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, outputStream)
-                        val editedImageBytes = outputStream.toByteArray()
-                        
-                        // Create a temporary file for the edited image
-                        val editedImageFile = createTempEditedImageFile(editedImageBytes)
-                        
-                        if (editedImageFile != null) {
-                            val aiMessage = ChatMessage(
-                                text = "I've edited your image as requested! Here's the result:",
-                                isUser = false,
-                                timestamp = System.currentTimeMillis(),
-                                pdfEntity = null,
-                                file = null,
-                                imageUri = android.net.Uri.fromFile(editedImageFile).toString(),
-                                imageFile = editedImageFile,
-                                generatedImageData = editedImageBytes,
-                                isImageGenerated = true,
-                                imagePrompt = editPrompt,
-                                isImageEdit = true
-                            )
-                            
-                            _messages.value = _messages.value + aiMessage
-                            Log.d(TAG, "✅ ChatViewModel: Edited image message added to chat")
-                        } else {
-                            throw Exception("Failed to create temporary file for edited image")
-                        }
+                    if (isVariationRequest) {
+                        // Handle multiple variations
+                        handleMultipleVariations(imageBytes, message)
                     } else {
-                        Log.w(TAG, "⚠️ ChatViewModel: Image editing failed - no result")
-                        val errorMessage = ChatMessage(
-                            text = "Sorry, I couldn't edit your image. Please try again or make sure you have a recent image in the chat.",
-                            isUser = false,
-                            timestamp = System.currentTimeMillis(),
-                            pdfEntity = null,
-                            file = null
-                        )
-                        _messages.value = _messages.value + errorMessage
+                        // Handle single edit
+                        handleSingleEdit(imageBytes, message)
                     }
                     
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ ChatViewModel: Error editing image", e)
-                    _errorMessage.value = "Error editing image: ${e.message}"
+                    Log.e(TAG, "❌ ChatViewModel: Error processing image request", e)
+                    _errorMessage.value = "Error processing image: ${e.message}"
                     
                     val errorMessage = ChatMessage(
-                        text = "Sorry, I encountered an error while editing your image. Please try again.",
+                        text = "Sorry, I encountered an error while processing your image. Please try again.",
                         isUser = false,
                         timestamp = System.currentTimeMillis(),
                         pdfEntity = null,
@@ -437,15 +453,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _messages.value = _messages.value + errorMessage
                 } finally {
                     _isLoading.value = false
-                    Log.d(TAG, "🏁 ChatViewModel: Image editing completed")
+                    Log.d(TAG, "🏁 ChatViewModel: Image processing completed")
                 }
             }
         } else {
-            Log.w(TAG, "⚠️ ChatViewModel: No recent image found for editing")
+            Log.w(TAG, "⚠️ ChatViewModel: No original image found for editing")
             _isLoading.value = false
             
             val errorMessage = ChatMessage(
-                text = "I don't see any recent image in our conversation to edit. Please upload an image first and then ask me to edit it.",
+                text = "I don't see any image in our conversation to edit. Please upload an image first and then ask me to edit it.",
                 isUser = false,
                 timestamp = System.currentTimeMillis(),
                 pdfEntity = null,
@@ -456,36 +472,233 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * Extract edit prompt from user message.
-     * 
-     * @param message The user's message
-     * @return Extracted prompt or null if not found
+     * Handle single image edit request.
      */
-    private fun extractEditPrompt(message: String): String? {
-        val lowerMessage = message.lowercase()
+    private suspend fun handleSingleEdit(imageBytes: ByteArray, message: String) {
+        Log.d(TAG, "✏️ ChatViewModel: Handling single image edit")
         
-        // Look for specific background change requests
-        val backgroundPatterns = listOf(
-            "change background to (.+)".toRegex(),
-            "change the background to (.+)".toRegex(),
-            "make background (.+)".toRegex(),
-            "make the background (.+)".toRegex(),
-            "set background to (.+)".toRegex(),
-            "set the background to (.+)".toRegex()
+        // Extract enhanced edit prompt from message
+        val editPrompt = extractEditPrompt(message)
+        Log.d(TAG, "✏️ ChatViewModel: Enhanced edit prompt: '$editPrompt'")
+
+
+        val editedBitmap = firebaseAiService.editImage(imageBytes, editPrompt)
+
+
+        Log.d(TAG, "📊 ChatViewModel: Edited image size: ${editedBitmap?.byteCount ?: 0} bytes")
+        if (editedBitmap != null) {
+            Log.d(TAG, "✅ ChatViewModel: Image edited successfully")
+            
+            // Convert bitmap to byte array for storage
+            val outputStream = java.io.ByteArrayOutputStream()
+            editedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, outputStream)
+            val editedImageBytes = outputStream.toByteArray()
+            
+            // Create a temporary file for the edited image
+            val editedImageFile = createTempEditedImageFile(editedImageBytes)
+            
+            if (editedImageFile != null) {
+                val aiMessage = ChatMessage(
+                    text = "I've edited your image as requested! Here's the result:",
+                    isUser = false,
+                    timestamp = System.currentTimeMillis(),
+                    pdfEntity = null,
+                    file = null,
+                    imageUri = android.net.Uri.fromFile(editedImageFile).toString(),
+                    imageFile = editedImageFile,
+                    generatedImageData = editedImageBytes,
+                    isImageGenerated = true,
+                    imagePrompt = editPrompt,
+                    isImageEdit = true
+                )
+                
+                _messages.value = _messages.value + aiMessage
+                Log.d(TAG, "✅ ChatViewModel: Edited image message added to chat")
+            } else {
+                throw Exception("Failed to create temporary file for edited image")
+            }
+        } else {
+            Log.w(TAG, "⚠️ ChatViewModel: Image editing failed - no result")
+            val errorMessage = ChatMessage(
+                text = "Sorry, I couldn't edit your image. Please try again or make sure you have a recent image in the chat.",
+                isUser = false,
+                timestamp = System.currentTimeMillis(),
+                pdfEntity = null,
+                file = null
+            )
+            _messages.value = _messages.value + errorMessage
+        }
+    }
+    
+    /**
+     * Handle multiple image variations request.
+     */
+    private suspend fun handleMultipleVariations(imageBytes: ByteArray, message: String) {
+        Log.d(TAG, "🎨 ChatViewModel: Handling multiple image variations")
+        
+        // Extract enhanced variation prompt from message
+        val variationPrompt = extractVariationPrompt(message)
+        Log.d(TAG, "🎨 ChatViewModel: Enhanced variation prompt: '$variationPrompt'")
+        
+        // Generate 3 variations
+        val variations = firebaseAiService.generateMultipleImageVariations(
+            imageBytes, 
+            variationPrompt, 
+            2
         )
         
-        for (pattern in backgroundPatterns) {
-            val match = pattern.find(lowerMessage)
-            if (match != null) {
-                val prompt = match.groupValues[1].trim()
-                if (prompt.isNotEmpty()) {
-                    return "Change the background to $prompt"
+        if (variations.isNotEmpty()) {
+            Log.d(TAG, "✅ ChatViewModel: Generated ${variations.size} variations")
+            
+            // Create messages for each variation
+            val variationMessages = variations.mapIndexed { index, bitmap ->
+                // Convert bitmap to byte array for storage
+                val outputStream = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, outputStream)
+                val variationBytes = outputStream.toByteArray()
+                
+                // Create a temporary file for the variation
+                val variationFile = createTempVariationImageFile(variationBytes, index + 1)
+                
+                if (variationFile != null) {
+                    ChatMessage(
+                        text = "Variation ${index + 1}:",
+                        isUser = false,
+                        timestamp = System.currentTimeMillis(),
+                        pdfEntity = null,
+                        file = null,
+                        imageUri = android.net.Uri.fromFile(variationFile).toString(),
+                        imageFile = variationFile,
+                        generatedImageData = variationBytes,
+                        isImageGenerated = true,
+                        imagePrompt = variationPrompt,
+                        isImageEdit = true
+                    )
+                } else {
+                    null
                 }
+            }.filterNotNull()
+            
+            if (variationMessages.isNotEmpty()) {
+                // Add all variation messages to chat
+                _messages.value = _messages.value + variationMessages
+                Log.d(TAG, "✅ ChatViewModel: Added ${variationMessages.size} variation messages to chat")
+            } else {
+                throw Exception("Failed to create temporary files for variations")
             }
+        } else {
+            Log.w(TAG, "⚠️ ChatViewModel: No variations generated")
+            val errorMessage = ChatMessage(
+                text = "Sorry, I couldn't generate variations of your image. Please try again.",
+                isUser = false,
+                timestamp = System.currentTimeMillis(),
+                pdfEntity = null,
+                file = null
+            )
+            _messages.value = _messages.value + errorMessage
+        }
+    }
+    
+    /**
+     * Extract variation prompt from user message using powerful AI-friendly prompts.
+     */
+    private fun extractVariationPrompt(message: String): String {
+        val trimmedMessage = message.trim()
+        
+        // If message is empty, return a default creative variation prompt
+        if (trimmedMessage.isEmpty()) {
+            return "Create multiple creative and diverse variations of this image, each with unique artistic styles, compositions, and visual elements while maintaining the core subject and appeal."
         }
         
-        // If no specific prompt found, return null to use default
-        return null
+        // Create a powerful, context-aware prompt for variations
+        val enhancedPrompt = buildString {
+            // Add context about being an expert creative director
+            append("As an expert creative director and digital artist, ")
+            
+            // Add the user's request with proper context
+            append("please create multiple diverse and creative variations of this image based on: \"$trimmedMessage\". ")
+            
+            // Add instructions for high-quality variations
+            append("Generate variations that are: ")
+            append("1) Each unique and distinct from the others, ")
+            append("2) High-quality and professional-looking, ")
+            append("3) Creative and innovative in their approach, ")
+            append("4) Visually appealing and aesthetically pleasing, ")
+            append("5) Coherent with the original image's core elements. ")
+            
+            // Add technical guidance for variations
+            append("Vary elements such as: ")
+            append("- Artistic styles and visual treatments, ")
+            append("- Color palettes and lighting conditions, ")
+            append("- Composition and framing, ")
+            append("- Backgrounds and environmental settings, ")
+            append("- Mood and atmosphere. ")
+            append("Ensure each variation offers a fresh perspective while maintaining the image's essential character and appeal.")
+        }
+        
+        Log.d(TAG, "🎨 ChatViewModel: Enhanced variation prompt created")
+        Log.d(TAG, "   📝 Original: '$trimmedMessage'")
+        Log.d(TAG, "   🚀 Enhanced: '$enhancedPrompt'")
+        
+        return enhancedPrompt
+    }
+    
+    /**
+     * Create a temporary file for a variation image.
+     */
+    private fun createTempVariationImageFile(imageBytes: ByteArray, variationNumber: Int): java.io.File? {
+        return try {
+            val tempFile = java.io.File(getApplication<Application>().cacheDir, "variation_${variationNumber}_${System.currentTimeMillis()}.jpg")
+            tempFile.writeBytes(imageBytes)
+            Log.d(TAG, "📁 ChatViewModel: Created temp variation file: ${tempFile.absolutePath}")
+            tempFile
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ ChatViewModel: Error creating temp variation file", e)
+            null
+        }
+    }
+    
+    /**
+     * Extract edit prompt from user message using powerful AI-friendly prompts.
+     * 
+     * @param message The user's message
+     * @return Enhanced prompt for AI image editing
+     */
+    private fun extractEditPrompt(message: String): String {
+        val trimmedMessage = message.trim()
+        
+        // If message is empty, return a default creative prompt
+        if (trimmedMessage.isEmpty()) {
+            return "Please enhance and improve this image with creative modifications while maintaining its core essence and visual appeal."
+        }
+        
+        // Create a powerful, context-aware prompt that leverages AI capabilities
+        val enhancedPrompt = buildString {
+            // Add context about being an expert image editor
+            append("As an expert image editor and digital artist, ")
+            
+            // Add the user's request with proper context
+            append("please modify this image according to the following request: \"$trimmedMessage\". ")
+            
+            // Add instructions for high-quality output
+            append("Ensure the modifications are: ")
+            append("1) High-quality and professional-looking, ")
+            append("2) Visually appealing and aesthetically pleasing, ")
+            append("3) Coherent with the original image's style and composition, ")
+            append("4) Creative and innovative while respecting the user's specific requirements. ")
+            
+            // Add technical guidance
+            append("Pay attention to lighting, shadows, colors, and overall visual harmony. ")
+            append("If the request involves adding elements, make them look natural and well-integrated. ")
+            append("If removing elements, ensure the result looks clean and professional. ")
+            append("Maintain the image's resolution and quality throughout the editing process.")
+        }
+        
+        Log.d(TAG, "🎨 ChatViewModel: Enhanced prompt created")
+        Log.d(TAG, "   📝 Original: '$trimmedMessage'")
+        Log.d(TAG, "   🚀 Enhanced: '$enhancedPrompt'")
+        
+        return enhancedPrompt
     }
     
     /**

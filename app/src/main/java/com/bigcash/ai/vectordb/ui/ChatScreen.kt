@@ -22,6 +22,7 @@ import com.bigcash.ai.vectordb.viewmodel.ChatMessage
 import com.bigcash.ai.vectordb.viewmodel.ChatViewModel
 import com.bigcash.ai.vectordb.ui.components.PdfListItem
 import com.bigcash.ai.vectordb.ui.components.MarkwonText
+import com.bigcash.ai.vectordb.ui.components.FullScreenImageViewer
 import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.compose.ui.platform.LocalContext
@@ -69,6 +70,10 @@ fun ChatScreen(
 
     var messageText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    
+    // Full-screen image viewer state
+    var showFullScreenImage by remember { mutableStateOf(false) }
+    var fullScreenImageUri by remember { mutableStateOf("") }
 
     // Gallery launcher
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -150,7 +155,12 @@ fun ChatScreen(
                     MessageBubble(
                         message = message,
                         modifier = Modifier.fillMaxWidth(),
-                        chatViewModel = chatViewModel
+                        chatViewModel = chatViewModel,
+                        onImageClick = { imageUri ->
+                            Log.d(TAG, "🖼️ ChatScreen: Image clicked, opening full-screen viewer")
+                            fullScreenImageUri = imageUri
+                            showFullScreenImage = true
+                        }
                     )
                 }
 
@@ -243,7 +253,16 @@ fun ChatScreen(
                     OutlinedTextField(
                         value = messageText,
                         onValueChange = { messageText = it },
-                        placeholder = { Text("Ask me about your documents...") },
+                        placeholder = { 
+                            val hasImage = messages.any { it.isUser && it.imageFile != null && !it.isImageGenerated }
+                            Text(
+                                if (hasImage) {
+                                    "Ask me anything about the image..."
+                                } else {
+                                    "Ask me about your documents..."
+                                }
+                            )
+                        },
                         modifier = Modifier.weight(1f),
                         maxLines = 3,
                         enabled = !isLoading
@@ -278,6 +297,20 @@ fun ChatScreen(
             }
         }
     }
+    
+    // Full-screen image viewer
+    if (showFullScreenImage) {
+        Log.d(TAG, "🖼️ ChatScreen: Showing full-screen image viewer for: $fullScreenImageUri")
+        FullScreenImageViewer(
+            imageUri = fullScreenImageUri,
+            onDismiss = {
+                Log.d(TAG, "❌ ChatScreen: Closing full-screen image viewer")
+                showFullScreenImage = false
+                fullScreenImageUri = ""
+                Log.d(TAG, "✅ ChatScreen: Full-screen image viewer state updated")
+            }
+        )
+    }
 }
 
 /**
@@ -287,7 +320,8 @@ fun ChatScreen(
 fun MessageBubble(
     message: ChatMessage,
     modifier: Modifier = Modifier,
-    chatViewModel: ChatViewModel
+    chatViewModel: ChatViewModel,
+    onImageClick: (String) -> Unit = {}
 ) {
     
     val context = LocalContext.current
@@ -347,10 +381,14 @@ fun MessageBubble(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(200.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        Log.d(TAG, "🖼️ MessageBubble: User image clicked")
+                                        onImageClick(message.imageUri!!)
+                                    },
                                 contentScale = ContentScale.Crop
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.End
@@ -395,7 +433,11 @@ fun MessageBubble(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(200.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        Log.d(TAG, "🖼️ MessageBubble: AI edited image clicked")
+                                        onImageClick(message.imageUri!!)
+                                    },
                                 contentScale = ContentScale.Crop
                             )
                             Spacer(modifier = Modifier.height(4.dp))
