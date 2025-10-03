@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.bigcash.ai.vectordb.data.PdfEntity
 import com.bigcash.ai.vectordb.repository.PdfRepository
 import com.bigcash.ai.vectordb.service.FirebaseAiService
+import com.bigcash.ai.vectordb.service.GetImgAiService
 import com.bigcash.ai.vectordb.service.ResponseBridge
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // Services
     private val pdfRepository = PdfRepository(application)
     private val firebaseAiService = FirebaseAiService(application)
+    private val getImgAiService = GetImgAiService(application)
     private val responseBridge = ResponseBridge(application)
 
     // UI State
@@ -312,7 +314,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         Log.d(TAG, "✅ ChatViewModel: Image message added to chat")
     }
-    
+
     /**
      * Check if the message is an image editing request.
      * 
@@ -415,7 +417,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             "variations", "variation", "multiple", "different", "alternatives", "options",
             "create variations", "make variations", "generate variations", "show variations"
         ).any { keyword -> lowerMessage.contains(keyword) }
-        
+
         // Find the most recent ORIGINAL image from user messages (not AI-generated images)
         // Look through the entire conversation history to find the last user-uploaded image
         val recentImageMessage =
@@ -700,7 +702,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         
         return enhancedPrompt
     }
-    
+
     /**
      * Create a temporary file for the edited image.
      * 
