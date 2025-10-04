@@ -2,6 +2,8 @@ package com.bigcash.ai.vectordb.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -82,6 +84,11 @@ fun PdfManagementScreen(
     val recognizedText by viewModel.recognizedText.collectAsStateWithLifecycle()
     val speechError by viewModel.speechError.collectAsStateWithLifecycle()
 
+    // Audio Summary State
+    val isProcessingAudioSummary by viewModel.isProcessingAudioSummary.collectAsStateWithLifecycle()
+    val audioSummaryText by viewModel.audioSummaryText.collectAsStateWithLifecycle()
+    val audioSummaryError by viewModel.audioSummaryError.collectAsStateWithLifecycle()
+
     // UI State
     var pdfName by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
@@ -92,6 +99,15 @@ fun PdfManagementScreen(
     var showYouTubeDialog by remember { mutableStateOf(false) }
     var showSummaryDialog by remember { mutableStateOf(false) }
     var youtubeUrl by remember { mutableStateOf("") }
+    
+    // Audio Summary UI State
+    var showAudioSummaryDialog by remember { mutableStateOf(false) }
+    var showAudioProcessingDialog by remember { mutableStateOf(false) }
+    var showLanguageSelectionDialog by remember { mutableStateOf(false) }
+    var selectedAudioUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedAudioFileName by remember { mutableStateOf("") }
+    var selectedAudioData by remember { mutableStateOf<ByteArray?>(null) }
+    var selectedLanguage by remember { mutableStateOf("English") }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -122,6 +138,38 @@ fun PdfManagementScreen(
         }
     }
 
+    // Audio file picker launcher for Call Summary
+    val audioFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            selectedAudioUri = it
+            // Extract filename from URI
+            val fileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex >= 0) {
+                    cursor.getString(nameIndex)
+                } else null
+            } ?: "audio_file.mp3"
+            
+            selectedAudioFileName = fileName
+            
+            // Read audio data and show language selection dialog
+            scope.launch {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    inputStream?.use { stream ->
+                        val audioData = stream.readBytes()
+                        selectedAudioData = audioData
+                        showLanguageSelectionDialog = true
+                    }
+                } catch (e: Exception) {
+                    Log.e("PdfManagementScreen", "Error reading audio file", e)
+                }
+            }
+        }
+    }
+
     // Show snackbar for errors
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -143,6 +191,19 @@ fun PdfManagementScreen(
                 showYouTubeDialog = false
                 youtubeUrl = ""
                 showSummaryDialog = true
+            }
+        }
+    }
+
+    // Handle audio summary results
+    LaunchedEffect(audioSummaryText, audioSummaryError) {
+        when {
+            audioSummaryText.isNotEmpty() -> {
+                showAudioProcessingDialog = false
+                showAudioSummaryDialog = true
+            }
+            audioSummaryError != null -> {
+                showAudioProcessingDialog = false
             }
         }
     }
@@ -291,6 +352,18 @@ fun PdfManagementScreen(
                         Icon(Icons.Filled.Phone, contentDescription = "Audio Recording")
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(if (isRecording) "Stop Recording" else "Start Recording")
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Button(
+                        onClick = { audioFilePickerLauncher.launch("audio/*") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading && !isProcessingAudioSummary
+                    ) {
+                        Icon(Icons.Filled.Search, contentDescription = "Call Summary")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Call Summary")
                     }
                 }
 
@@ -451,6 +524,53 @@ fun PdfManagementScreen(
             speechError = speechError,
             onDismiss = {
                 viewModel.clearSpeechData()
+            }
+        )
+    }
+    
+    // Language Selection Dialog
+    if (showLanguageSelectionDialog) {
+        LanguageSelectionDialog(
+            fileName = selectedAudioFileName,
+            selectedLanguage = selectedLanguage,
+            onLanguageChange = { selectedLanguage = it },
+            onConfirm = {
+                selectedAudioData?.let { audioData ->
+                    showLanguageSelectionDialog = false
+                    showAudioProcessingDialog = true
+                    viewModel.processAudioFileForSummary(selectedAudioFileName, audioData, selectedLanguage)
+                }
+            },
+            onDismiss = {
+                showLanguageSelectionDialog = false
+                selectedAudioData = null
+                selectedAudioFileName = ""
+            }
+        )
+    }
+    
+    // Audio Processing Dialog
+    if (showAudioProcessingDialog) {
+        AudioProcessingDialog(
+            fileName = selectedAudioFileName,
+            isLoading = isProcessingAudioSummary,
+            error = audioSummaryError,
+            onDismiss = {
+                showAudioProcessingDialog = false
+                viewModel.clearAudioSummaryData()
+            }
+        )
+    }
+    
+    // Audio Summary Dialog
+    if (showAudioSummaryDialog) {
+        AudioSummaryDialog(
+            summary = audioSummaryText,
+            isLoading = isProcessingAudioSummary,
+            error = audioSummaryError,
+            onDismiss = {
+                showAudioSummaryDialog = false
+                viewModel.clearAudioSummaryData()
             }
         )
     }
@@ -789,4 +909,398 @@ fun SpeechResultDialog(
             }
         }
     )
+}
+
+/**
+ * Dialog for displaying AI-generated audio summary.
+ */
+@Composable
+fun AudioSummaryDialog(
+    summary: String,
+    isLoading: Boolean,
+    error: String?,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    
+    // Initialize Markwon for markdown rendering
+    val markwon = remember {
+        Markwon.builder(context)
+            .usePlugin(HtmlPlugin.create())
+            .usePlugin(ImagesPlugin.create())
+            .usePlugin(LinkifyPlugin.create())
+            .usePlugin(TablePlugin.create(context))
+            .usePlugin(StrikethroughPlugin.create())
+            .usePlugin(TaskListPlugin.create(context))
+            .build()
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Filled.Email, contentDescription = "Audio Summary")
+                Text("🎵 Audio Call Summary")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+            ) {
+                if (isLoading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Processing audio and generating summary...",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else if (error != null) {
+                    Text(
+                        text = "Error: $error",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (summary.isNotEmpty()) {
+                    Text(
+                        text = "AI-Generated Summary:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Use Markwon to render markdown
+                    AndroidView(
+                        factory = { context ->
+                            val textView = android.widget.TextView(context)
+                            textView.textSize = 14f
+                            textView.setTextColor(android.graphics.Color.BLACK)
+                            textView.setPadding(0, 0, 0, 0)
+                            markwon.setMarkdown(textView, summary)
+                            textView
+                        },
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = "No summary available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isLoading
+            ) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog for displaying audio processing status.
+ */
+@Composable
+fun AudioProcessingDialog(
+    fileName: String,
+    isLoading: Boolean,
+    error: String?,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Filled.Email, contentDescription = "Audio Processing")
+                Text("🎵 Processing Audio")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+            ) {
+                Text(
+                    text = "File: $fileName",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                if (isLoading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        Column {
+                            Text(
+                                text = "Processing audio file...",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Extracting text and generating AI summary",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Processing steps
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ProcessingStep(
+                            text = "Reading audio file",
+                            isCompleted = true
+                        )
+                        ProcessingStep(
+                            text = "Extracting text using AI",
+                            isCompleted = isLoading
+                        )
+                        ProcessingStep(
+                            text = "Generating summary",
+                            isCompleted = false
+                        )
+                    }
+                } else if (error != null) {
+                    Text(
+                        text = "Error: $error",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    Text(
+                        text = "Processing completed",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isLoading
+            ) {
+                Text(if (isLoading) "Processing..." else "Close")
+            }
+        }
+    )
+}
+
+/**
+ * Individual processing step component.
+ */
+@Composable
+private fun ProcessingStep(
+    text: String,
+    isCompleted: Boolean
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (isCompleted) {
+            Icon(
+                imageVector = Icons.Filled.Search, // Using search icon as checkmark
+                contentDescription = "Completed",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+        } else {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp
+            )
+        }
+        
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Dialog for selecting language for audio summary.
+ */
+@Composable
+fun LanguageSelectionDialog(
+    fileName: String,
+    selectedLanguage: String,
+    onLanguageChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Filled.Email, contentDescription = "Language Selection")
+                Text("🌐 Select Language")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+            ) {
+                Text(
+                    text = "File: $fileName",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "Choose the language for your audio summary:",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Language selection options
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LanguageOption(
+                        language = "English",
+                        flag = "🇺🇸",
+                        isSelected = selectedLanguage == "English",
+                        onClick = { onLanguageChange("English") }
+                    )
+                    
+                    LanguageOption(
+                        language = "Hindi",
+                        flag = "🇮🇳",
+                        isSelected = selectedLanguage == "Hindi",
+                        onClick = { onLanguageChange("Hindi") }
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "The AI will generate a summary in the selected language based on the audio content.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm
+            ) {
+                Text("Generate Summary")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+/**
+ * Individual language option component.
+ */
+@Composable
+private fun LanguageOption(
+    language: String,
+    flag: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) 
+                MaterialTheme.colorScheme.primaryContainer 
+            else 
+                MaterialTheme.colorScheme.surfaceVariant
+        ),
+        border = if (isSelected) 
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        else 
+            null
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = flag,
+                style = MaterialTheme.typography.headlineMedium
+            )
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = language,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) 
+                        MaterialTheme.colorScheme.onPrimaryContainer 
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (language == "English") 
+                        "Generate summary in English" 
+                    else 
+                        "हिंदी में सारांश उत्पन्न करें",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isSelected) 
+                        MaterialTheme.colorScheme.onPrimaryContainer 
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Filled.Search, // Using search icon as checkmark
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
 }

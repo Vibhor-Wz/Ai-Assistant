@@ -61,6 +61,16 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _speechError = MutableStateFlow<String?>(null)
     val speechError: StateFlow<String?> = _speechError.asStateFlow()
 
+    // Audio Summary State
+    private val _isProcessingAudioSummary = MutableStateFlow(false)
+    val isProcessingAudioSummary: StateFlow<Boolean> = _isProcessingAudioSummary.asStateFlow()
+
+    private val _audioSummaryText = MutableStateFlow("")
+    val audioSummaryText: StateFlow<String> = _audioSummaryText.asStateFlow()
+
+    private val _audioSummaryError = MutableStateFlow<String?>(null)
+    val audioSummaryError: StateFlow<String?> = _audioSummaryError.asStateFlow()
+
     // Audio Recording State
     private val _isRecording = MutableStateFlow(false)
     val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
@@ -469,6 +479,55 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun clearRecordingError() {
         _recordingError.value = null
+    }
+
+    /**
+     * Process audio file for summary generation.
+     * 
+     * @param fileName The name of the audio file
+     * @param audioData The audio file data as ByteArray
+     * @param language The language for summary generation ("English" or "Hindi")
+     */
+    fun processAudioFileForSummary(fileName: String, audioData: ByteArray, language: String = "English") {
+        viewModelScope.launch {
+            _isProcessingAudioSummary.value = true
+            _audioSummaryError.value = null
+            _audioSummaryText.value = ""
+
+            try {
+                Log.d("PdfViewModel", "🎵 Starting audio summary processing: $fileName")
+                Log.d("PdfViewModel", "📊 Audio file size: ${audioData.size} bytes")
+
+                // First, extract text from audio using existing method
+                val extractedText = repository.extractTextFromAudio(fileName, audioData)
+                Log.d("PdfViewModel", "📝 Extracted text length: ${extractedText.length}")
+
+                if (extractedText.isNotEmpty()) {
+                    // Generate AI summary from the extracted text with selected language
+                    val summary = firebaseAiService.generateSummaryFromText(extractedText, language)
+                    Log.d("PdfViewModel", "✅ Audio summary generated successfully in $language")
+                    _audioSummaryText.value = summary
+                } else {
+                    Log.w("PdfViewModel", "⚠️ No text extracted from audio file")
+                    _audioSummaryError.value = "Could not extract text from the audio file. Please try a different audio file."
+                }
+
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "❌ Error processing audio file for summary", e)
+                _audioSummaryError.value = "Failed to process audio file: ${e.message}"
+            } finally {
+                _isProcessingAudioSummary.value = false
+            }
+        }
+    }
+
+    /**
+     * Clear audio summary data.
+     */
+    fun clearAudioSummaryData() {
+        _audioSummaryText.value = ""
+        _audioSummaryError.value = null
+        _isProcessingAudioSummary.value = false
     }
 
     /**

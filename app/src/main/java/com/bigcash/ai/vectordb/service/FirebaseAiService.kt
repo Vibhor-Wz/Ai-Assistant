@@ -662,6 +662,47 @@ class FirebaseAiService(private val context: Context) {
     }
 
     /**
+     * Generate a summary from text using Firebase AI.
+     * This function takes any text content and generates a comprehensive summary.
+     *
+     * @param text The text content to summarize
+     * @param language The language for summary generation ("English" or "Hindi")
+     * @return AI-generated summary of the text
+     */
+    suspend fun generateSummaryFromText(text: String, language: String = "English"): String = withContext(Dispatchers.IO) {
+        Log.d(TAG, "📝 FirebaseAiService: Generating summary from text")
+        Log.d(TAG, "📊 FirebaseAiService: Text length: ${text.length} characters")
+
+        try {
+            // Ensure user is authenticated
+            if (!ensureAuthenticated()) {
+                Log.w(TAG, "⚠️ FirebaseAiService: Authentication failed, using fallback")
+                return@withContext generateTextSummaryFallback(text)
+            }
+
+//            val prompt = buildTextSummaryPrompt(text)
+            val prompt = if (language.lowercase() == "hindi") {
+                buildHindiSummaryPrompt(text)
+            } else {
+                buildTextSummaryPrompt(text)
+            }
+            Log.d(TAG, "📋 FirebaseAiService: Generated text summary prompt")
+
+            val response = generativeModel.generateContent(prompt)
+            val summary = response.text ?: generateTextSummaryFallback(text)
+
+            Log.d(TAG, "✅ FirebaseAiService: Text summary generated successfully")
+            Log.d(TAG, "📊 FirebaseAiService: Summary length: ${summary.length} characters")
+
+            return@withContext summary
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FirebaseAiService: Error generating text summary", e)
+            return@withContext generateTextSummaryFallback(text)
+        }
+    }
+
+    /**
      * Summarize a YouTube transcript using Firebase AI.
      * This function takes a raw YouTube transcript and generates a comprehensive summary.
      *
@@ -803,6 +844,277 @@ class FirebaseAiService(private val context: Context) {
         This is a basic analysis generated without AI processing. For a detailed summary, ensure Firebase AI service is properly configured.
         
         **Full Transcript Length:** ${transcript.length} characters
+        """.trimIndent()
+    }
+
+    /**
+     * Build a comprehensive prompt for summarizing general text content.
+     *
+     * @param text The text content to summarize
+     * @return Formatted prompt for the AI model
+     */
+//    private fun buildTextSummaryPrompt(text: String): String {
+//        return """
+//        You are an AI assistant specialized in creating comprehensive summaries of text content.
+//        Your task is to analyze the provided text and create a well-structured, informative summary.
+//
+//        TEXT TO SUMMARIZE:
+//        $text
+//
+//        YOUR TASK:
+//        1. **Create a comprehensive summary** that captures the main points, key topics, and important details from the text.
+//        2. **Structure the summary** with clear headings and sections for better readability.
+//        3. **Identify the main themes** and topics discussed in the content.
+//        4. **Extract key insights** and important information that would be valuable to someone who didn't read the original text.
+//        5. **Maintain the original context** and meaning while making it more concise and organized.
+//        6. **Use markdown formatting** to make the summary visually appealing and easy to read.
+//
+//        SUMMARY STRUCTURE:
+//        ## 📝 Content Summary
+//
+//        ### 🎯 Main Topics
+//        - List the main topics and themes discussed
+//
+//        ### 🔑 Key Points
+//        - Highlight the most important points and insights
+//
+//        ### 📋 Detailed Summary
+//        - Provide a comprehensive summary of the content
+//
+//        ### 💡 Key Takeaways
+//        - List the main takeaways and actionable insights
+//
+//        ### 🏷️ Content Type
+//        - Identify what type of content this appears to be (meeting notes, call transcript, document, etc.)
+//
+//        FORMATTING GUIDELINES:
+//        - Use **bold** for important points and key information
+//        - Use *italics* for emphasis
+//        - Use bullet points (-) for lists
+//        - Use numbered lists (1., 2., etc.) for step-by-step information
+//        - Use > blockquotes for important quotes or key statements
+//        - Use ## headings for major sections
+//        - Use ### headings for subsections
+//
+//        CONTENT ANALYSIS GUIDELINES:
+//        - If this appears to be a call transcript or meeting notes, structure it accordingly
+//        - If this appears to be a document or article, summarize the main arguments and conclusions
+//        - If this appears to be technical content, highlight the technical details and procedures
+//        - If this appears to be conversational content, capture the main discussion points and decisions
+//        - Use clear, professional language
+//        - Organize information logically
+//        - Make it useful for someone who wants to understand the content without reading the original
+//        - If the content contains multiple languages, note this and summarize accordingly
+//        - If there are timestamps or technical details, include them where relevant
+//        """.trimIndent()
+//    }
+
+
+
+
+
+
+
+
+
+    private fun buildTextSummaryPrompt(text: String): String {
+        return """
+    You are an assistant that writes **clear, natural, and easy-to-read summaries** of any text.
+    Your goal is to help someone quickly understand what the text is about —
+    as if you were explaining it to a friend who didn’t read it.
+
+    TEXT TO SUMMARIZE:
+    $text
+
+    YOUR TASK:
+    1. Write a **simple, natural summary** that covers the main ideas, important details, and any useful insights.
+    2. Use a **friendly, human tone** — not robotic or academic.
+    3. Keep the summary **concise but complete** — enough for someone to fully understand the content.
+    4. If the text is a conversation or call, describe what was discussed and what was decided.
+    5. If it’s a document, article, or notes, summarize the key sections and main message.
+    6. Keep formatting light and easy to scan.
+
+    FORMAT:
+    ## Summary
+
+    ### Main Idea
+    - A short overview of what this text is mainly about.
+
+    ### Important Points
+    - A few bullet points summarizing the key details, topics, or decisions.
+
+    ### Extra Notes
+    - Any useful insights, context, or follow-ups worth mentioning.
+
+    STYLE GUIDE:
+    - Use **plain, natural language**.
+    - Avoid overusing markdown or bold unless needed.
+    - Don’t make it sound like an AI wrote it.
+    - Focus on *clarity and readability*.
+    - If the text includes emotions, tone, or sentiment, capture it briefly in your own words.
+
+    GOAL:
+    Make the summary sound like it was written by a helpful human who read and understood the content carefully.
+    """.trimIndent()
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//    private fun buildTextSummaryPrompt(text: String): String {
+//        return """
+//    You are an assistant that writes **clear, natural summaries** of any text or transcript.
+//    Your goal is to help someone quickly understand what was said or written —
+//    as if you were explaining it to a friend who didn’t read it.
+//
+//    TEXT TO SUMMARIZE:
+//    $text
+//
+//    YOUR TASK:
+//    1. Write a **simple, human-readable summary** that covers the main ideas and useful details.
+//    2. If the text includes **multiple speakers** (like a meeting or call),
+//       - Identify each speaker by name if provided (e.g., "John:", "Agent:", "Customer:").
+//       - Summarize what each speaker said in your own words.
+//       - Highlight key exchanges, questions, and decisions.
+//    3. If the text is not conversational (e.g., article, notes, document), write a normal summary.
+//    4. Use a **friendly, natural tone** — not robotic or overly formal.
+//    5. Keep it concise but complete — focus on clarity and usefulness.
+//
+//    FORMAT:
+//    ## Summary
+//
+//    ### Main Idea
+//    - Briefly explain what the text or discussion was about.
+//
+//    ### Key Details
+//    - Important points, topics, or actions mentioned.
+//    - Keep sentences short and easy to read.
+//
+//    ### Speakers (if applicable)
+//    - **Speaker 1 (Name or Role):** Main points or statements.
+//    - **Speaker 2 (Name or Role):** Responses or opinions.
+//    - Include more speakers only if relevant.
+//
+//    ### Notes or Takeaways
+//    - Key insights, outcomes, or next steps.
+//    - Mention tone or sentiment briefly if helpful (e.g., friendly, tense, excited).
+//
+//    STYLE GUIDE:
+//    - Use plain, natural language.
+//    - Avoid over-formatting or heavy markdown.
+//    - Keep the flow conversational.
+//    - Only include speakers when they add clarity.
+//
+//    GOAL:
+//    Produce a short, natural summary that sounds like a human wrote it after carefully reading or listening to the content.
+//    """.trimIndent()
+//    }
+
+
+
+
+
+
+
+
+
+
+
+
+    private fun buildHindiSummaryPrompt(text: String): String {
+        return """
+    आप एक सहायक हैं जो किसी भी टेक्स्ट या बातचीत का **स्पष्ट, आसान और स्वाभाविक हिंदी सारांश** लिखते हैं।
+    आपका उद्देश्य यह है कि कोई व्यक्ति जल्दी से समझ सके कि इस टेक्स्ट या बातचीत में क्या कहा गया है,
+    जैसे आप किसी दोस्त को समझा रहे हों जिसने इसे नहीं पढ़ा या सुना हो।
+
+    सारांश बनाने के लिए टेक्स्ट:
+    $text
+
+    आपका कार्य:
+    1. एक **सादा और स्वाभाविक हिंदी सारांश** लिखें जिसमें मुख्य बातें और ज़रूरी विवरण हों।
+    2. अगर टेक्स्ट में **कई स्पीकर्स** (जैसे कॉल या मीटिंग) हैं:
+       - हर स्पीकर का नाम या रोल पहचानें (जैसे “राहुल:”, “एजेंट:”, “ग्राहक:”)
+       - हर स्पीकर ने क्या कहा उसका सारांश अपने शब्दों में लिखें।
+       - मुख्य चर्चा, सवाल और निर्णयों को शामिल करें।
+    3. अगर टेक्स्ट बातचीत नहीं है (जैसे कोई आर्टिकल या नोट्स), तो सामान्य सारांश लिखें।
+    4. भाषा को **दोस्ताना, सरल और प्राकृतिक** रखें — मशीन जैसी नहीं।
+    5. सारांश को **संक्षिप्त लेकिन पूरा** बनाएं।
+
+    प्रारूप:
+    ## सारांश
+
+    ### मुख्य विषय
+    - यह टेक्स्ट या बातचीत मुख्य रूप से किस बारे में है।
+
+    ### ज़रूरी बिंदु
+    - मुख्य बातें, विषय या कार्य जिन पर चर्चा हुई।
+
+    ### स्पीकर्स (अगर हों)
+    - **स्पीकर 1 (नाम या भूमिका):** क्या कहा।
+    - **स्पीकर 2 (नाम या भूमिका):** क्या जवाब दिया या राय दी।
+
+    ### नोट्स / निष्कर्ष
+    - महत्वपूर्ण नतीजे, सुझाव या अगला कदम।
+    - अगर बातचीत में कोई भावना या टोन है (जैसे सौहार्दपूर्ण, ग़ुस्से वाला, औपचारिक), तो उसका संक्षिप्त ज़िक्र करें।
+
+    लेखन शैली:
+    - आसान और रोज़मर्रा की हिंदी का उपयोग करें।
+    - बहुत अधिक मार्कडाउन या तकनीकी फॉर्मेटिंग न करें।
+    - सिर्फ़ वही जानकारी शामिल करें जो ज़रूरी और स्पष्ट हो।
+
+    उद्देश्य:
+    एक ऐसा सारांश बनाना जो ऐसा लगे जैसे किसी इंसान ने ध्यान से पढ़कर या सुनकर लिखा हो —
+    न कि किसी मशीन ने जनरेट किया हो।
+    """.trimIndent()
+    }
+
+
+
+
+
+    /**
+     * Generate a fallback summary when AI service is unavailable for general text.
+     */
+    private fun generateTextSummaryFallback(text: String): String {
+        val wordCount = text.split("\\s+".toRegex()).size
+        val charCount = text.length
+        val lines = text.split("\n").size
+        
+        return """
+        ## 📝 Content Summary
+        
+        ### 📊 Content Statistics
+        - **Word Count:** $wordCount words
+        - **Character Count:** $charCount characters  
+        - **Lines:** $lines lines
+        
+        ### 📋 Content Overview
+        This appears to be text content with $wordCount words, suggesting it contains substantial information or discussion.
+        
+        ### 🔍 Key Characteristics
+        - **Content Type:** Text document or transcript
+        - **Length:** ${if (wordCount > 1000) "Long-form content" else if (wordCount > 500) "Medium-length content" else "Short content"}
+        - **Language:** ${if (text.any { it.code in 0x0900..0x097F }) "Contains Hindi/Devanagari script" else "English or other language"}
+        
+        ### 📄 Content Preview
+        ${text.take(500)}${if (text.length > 500) "..." else ""}
+        
+        ### ⚠️ Note
+        This is a basic analysis generated without AI processing. For a detailed summary, ensure Firebase AI service is properly configured.
+        
+        **Full Content Length:** ${text.length} characters
         """.trimIndent()
     }
 
