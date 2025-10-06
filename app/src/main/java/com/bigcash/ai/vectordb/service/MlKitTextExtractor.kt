@@ -19,7 +19,7 @@ class MlKitTextExtractor(private val context: Context) {
         private val PDF_EXTENSIONS = setOf("pdf")
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
         private val DOCUMENT_EXTENSIONS = setOf("doc", "docx", "txt", "rtf", "odt")
-        private val AUDIO_EXTENSIONS = setOf("mp3", "wav", "ogg")
+        private val AUDIO_EXTENSIONS = setOf("mp3", "wav", "ogg", "m4a", "aac", "amr", "3gp", "flac")
     }
 
     private val firebaseAiService = FirebaseAiService(context)
@@ -99,14 +99,21 @@ class MlKitTextExtractor(private val context: Context) {
      */
     private fun detectFileType(fileName: String): FileType {
         val extension = fileName.substringAfterLast('.', "").lowercase()
+        
+        Log.d(VECTOR_DEBUG_TAG, "🔍 MlKitTextExtractor: Detecting file type for $fileName")
+        Log.d(VECTOR_DEBUG_TAG, "🔍 MlKitTextExtractor: File extension: $extension")
+        Log.d(VECTOR_DEBUG_TAG, "🔍 MlKitTextExtractor: Supported audio extensions: $AUDIO_EXTENSIONS")
 
-        return when {
+        val fileType = when {
             extension in PDF_EXTENSIONS -> FileType.PDF
             extension in IMAGE_EXTENSIONS -> FileType.IMAGE
             extension in DOCUMENT_EXTENSIONS -> FileType.DOCUMENT
             extension in AUDIO_EXTENSIONS -> FileType.AUDIO
             else -> FileType.UNSUPPORTED
         }
+        
+        Log.d(VECTOR_DEBUG_TAG, "🔍 MlKitTextExtractor: Detected file type: $fileType")
+        return fileType
     }
 
     /**

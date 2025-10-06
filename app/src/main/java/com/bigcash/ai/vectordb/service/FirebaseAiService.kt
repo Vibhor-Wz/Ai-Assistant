@@ -211,13 +211,16 @@ class FirebaseAiService(private val context: Context) {
             "rar" -> "application/x-rar-compressed"
             "7z" -> "application/x-7z-compressed"
 
-            // Audio
-            "mp3" -> "audio/mp3"
+            // Audio (includes call recording formats)
+            "mp3" -> "audio/mpeg"
             "wav" -> "audio/wav"
             "ogg" -> "audio/ogg"
             "aiff" -> "audio/aiff"
             "aac" -> "audio/aac"
-            "flac" -> "aaudio/flac"
+            "flac" -> "audio/flac"
+            "amr" -> "audio/amr"
+            "3gp" -> "audio/3gpp"
+            "m4a" -> "audio/mp4"
 
             // Video
             "mp4" -> "video/mp4"
@@ -680,7 +683,6 @@ class FirebaseAiService(private val context: Context) {
                 return@withContext generateTextSummaryFallback(text)
             }
 
-//            val prompt = buildTextSummaryPrompt(text)
             val prompt = if (language.lowercase() == "hindi") {
                 buildHindiSummaryPrompt(text)
             } else {

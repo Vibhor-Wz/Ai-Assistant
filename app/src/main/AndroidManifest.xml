@@ -10,6 +10,14 @@
     <!-- Permission for speech recognition -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     
+<!--    &lt;!&ndash; Permission for accessing call recordings &ndash;&gt;-->
+<!--    <uses-permission android:name="android.permission.READ_CALL_LOG" />-->
+<!--    <uses-permission android:name="android.permission.READ_PHONE_STATE" />-->
+<!--    -->
+    <!-- MediaStore permissions for audio file access -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" 
+        android:minSdkVersion="30" />
+    
     <!-- For Android 13+ (API 33+), we don't need storage permissions for SAF -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" 
         android:minSdkVersion="33" />

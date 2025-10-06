@@ -3,10 +3,12 @@ package com.bigcash.ai.vectordb.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -31,6 +33,7 @@ import android.content.Intent
 import android.net.Uri
 import android.speech.RecognizerIntent
 import android.util.Log
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.filled.Build
 import androidx.core.content.FileProvider
 import com.bigcash.ai.vectordb.ui.components.PdfListItem
@@ -38,7 +41,10 @@ import java.io.File
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.bigcash.ai.vectordb.service.CallRecordingsService
 import com.bigcash.ai.vectordb.utils.PermissionHelper
 import io.noties.markwon.Markwon
 import io.noties.markwon.html.HtmlPlugin
@@ -89,6 +95,11 @@ fun PdfManagementScreen(
     val audioSummaryText by viewModel.audioSummaryText.collectAsStateWithLifecycle()
     val audioSummaryError by viewModel.audioSummaryError.collectAsStateWithLifecycle()
 
+    // Call Recordings State
+    val callRecordings by viewModel.callRecordings.collectAsStateWithLifecycle()
+    val isLoadingCallRecordings by viewModel.isLoadingCallRecordings.collectAsStateWithLifecycle()
+    val callRecordingsError by viewModel.callRecordingsError.collectAsStateWithLifecycle()
+
     // UI State
     var pdfName by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
@@ -104,10 +115,12 @@ fun PdfManagementScreen(
     var showAudioSummaryDialog by remember { mutableStateOf(false) }
     var showAudioProcessingDialog by remember { mutableStateOf(false) }
     var showLanguageSelectionDialog by remember { mutableStateOf(false) }
+    var showCallRecordingsDialog by remember { mutableStateOf(false) }
     var selectedAudioUri by remember { mutableStateOf<Uri?>(null) }
     var selectedAudioFileName by remember { mutableStateOf("") }
     var selectedAudioData by remember { mutableStateOf<ByteArray?>(null) }
     var selectedLanguage by remember { mutableStateOf("English") }
+    var selectedCallRecording by remember { mutableStateOf<com.bigcash.ai.vectordb.service.CallRecordingsService.CallRecording?>(null) }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -357,7 +370,26 @@ fun PdfManagementScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Button(
-                        onClick = { audioFilePickerLauncher.launch("audio/*") },
+                        onClick = { 
+                            Log.d("PdfManagementScreen", "🔘 Call Summary button clicked")
+                            Log.d("PdfManagementScreen", "🔐 All permissions granted: ${permissionHelper.areAllCallRecordingPermissionsGranted()}")
+                            Log.d("PdfManagementScreen", "🔐 Call log permissions: ${permissionHelper.areCallLogPermissionsGranted()}")
+                            Log.d("PdfManagementScreen", "🔐 Storage permissions: ${permissionHelper.areStoragePermissionsGranted()}")
+                            
+                            // Try to show dialog and fetch recordings regardless of permissions
+                            // MediaStore should work without explicit permissions on modern Android
+                            Log.d("PdfManagementScreen", "🚀 Attempting to show dialog and fetch recordings")
+                            showCallRecordingsDialog = true
+                            viewModel.fetchCallRecordings()
+                            
+                            // Also try to request permissions in the background
+                            if (!permissionHelper.areAllCallRecordingPermissionsGranted()) {
+                                Log.d("PdfManagementScreen", "🔐 Requesting permissions in background")
+                                permissionHelper.requestAllCallRecordingPermissions { granted ->
+                                    Log.d("PdfManagementScreen", "🔐 Background permission request result: $granted")
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isLoading && !isProcessingAudioSummary
                     ) {
@@ -528,14 +560,45 @@ fun PdfManagementScreen(
         )
     }
     
+    // Call Recordings Dialog
+    if (showCallRecordingsDialog) {
+        Log.d("PdfManagementScreen", "📱 Showing Call Recordings Dialog")
+        CallRecordingsDialog(
+            recordings = callRecordings,
+            isLoading = isLoadingCallRecordings,
+            error = callRecordingsError,
+            onRecordingSelected = { recording ->
+                selectedCallRecording = recording
+                showCallRecordingsDialog = false
+                showLanguageSelectionDialog = true
+            },
+            onRefresh = {
+                viewModel.fetchCallRecordings()
+            },
+            onBrowseManually = {
+                showCallRecordingsDialog = false
+                viewModel.clearCallRecordingsData()
+                audioFilePickerLauncher.launch("audio/*")
+            },
+            onDismiss = {
+                showCallRecordingsDialog = false
+                viewModel.clearCallRecordingsData()
+            }
+        )
+    }
+    
     // Language Selection Dialog
     if (showLanguageSelectionDialog) {
         LanguageSelectionDialog(
-            fileName = selectedAudioFileName,
+            fileName = selectedCallRecording?.contactName ?: selectedCallRecording?.phoneNumber ?: selectedAudioFileName,
             selectedLanguage = selectedLanguage,
             onLanguageChange = { selectedLanguage = it },
             onConfirm = {
-                selectedAudioData?.let { audioData ->
+                selectedCallRecording?.let { recording ->
+                    showLanguageSelectionDialog = false
+                    showAudioProcessingDialog = true
+                    viewModel.processCallRecording(recording, selectedLanguage)
+                } ?: selectedAudioData?.let { audioData ->
                     showLanguageSelectionDialog = false
                     showAudioProcessingDialog = true
                     viewModel.processAudioFileForSummary(selectedAudioFileName, audioData, selectedLanguage)
@@ -543,6 +606,7 @@ fun PdfManagementScreen(
             },
             onDismiss = {
                 showLanguageSelectionDialog = false
+                selectedCallRecording = null
                 selectedAudioData = null
                 selectedAudioFileName = ""
             }
@@ -1300,6 +1364,254 @@ private fun LanguageOption(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Dialog for displaying call recordings list.
+ */
+@Composable
+fun CallRecordingsDialog(
+    recordings: List<CallRecordingsService.CallRecording>,
+    isLoading: Boolean,
+    error: String?,
+    onRecordingSelected: (CallRecordingsService.CallRecording) -> Unit,
+    onRefresh: () -> Unit,
+    onBrowseManually: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        title = {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Filled.Phone, contentDescription = "Audio Files")
+                    Text("🎵 Audio Files")
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text("Call Recordings",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 18.sp,
+                        color = Color.Blue
+
+                    )
+                }
+            }
+
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+            ) {
+                if (isLoading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        Text(
+                            text = "Loading audio files...",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                } else if (error != null) {
+                    Text(
+                        text = "Error: $error",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (recordings.isEmpty()) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "No audio files found",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "The app couldn't automatically find audio files. This might be due to:\n• Storage permissions not granted\n• Files in restricted directories\n• Android security restrictions",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = onBrowseManually,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Search, contentDescription = "Browse")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Browse Files Manually")
+                            }
+                            Text(
+                                text = "This will open your file manager to select audio files",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(recordings) { recording ->
+                            CallRecordingItem(
+                                recording = recording,
+                                onClick = { onRecordingSelected(recording) }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = onRefresh,
+                    enabled = !isLoading
+                ) {
+                    Text("Refresh")
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    enabled = !isLoading
+                ) {
+                    Text("Close")
+                }
+            }
+        }
+    )
+}
+
+/**
+ * Individual call recording item component.
+ */
+@Composable
+private fun CallRecordingItem(
+    recording: com.bigcash.ai.vectordb.service.CallRecordingsService.CallRecording,
+    onClick: () -> Unit
+) {
+    val callRecordingsService = com.bigcash.ai.vectordb.service.CallRecordingsService(androidx.compose.ui.platform.LocalContext.current)
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = recording.contactName ?: recording.phoneNumber,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (recording.contactName != null) {
+                        Text(
+                            text = recording.phoneNumber,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                
+                Text(
+                    text = if (recording.callType == "Audio Recording") "Audio" else recording.callType,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = when {
+                        recording.duration > 0 -> "Duration: ${callRecordingsService.formatDuration(recording.duration)}"
+                        recording.duration == 0L -> "Duration: Unknown"
+                        else -> "Audio File"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Text(
+                    text = "Size: ${callRecordingsService.formatFileSize(recording.fileSize)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Date: ${java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(recording.date)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                recording.mimeType?.let { mimeType ->
+                    Text(
+                        text = mimeType.substringAfter("/").uppercase(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
         }
     }

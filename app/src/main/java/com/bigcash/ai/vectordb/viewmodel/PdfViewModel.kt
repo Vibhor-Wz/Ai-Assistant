@@ -10,10 +10,12 @@ import com.youtubetranscript.YouTubeTranscriptApi
 import com.youtubetranscript.TranscriptException
 import com.bigcash.ai.vectordb.service.FirebaseAiService
 import com.bigcash.ai.vectordb.service.AudioRecorderService
+import com.bigcash.ai.vectordb.service.CallRecordingsService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * ViewModel for PDF management operations.
@@ -24,6 +26,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PdfRepository(application)
     private val firebaseAiService = FirebaseAiService(application)
     private val audioRecorderService = AudioRecorderService(application)
+    private val callRecordingsService = CallRecordingsService(application)
 
     // UI State
     private val _pdfs = MutableStateFlow<List<PdfEntity>>(emptyList())
@@ -70,6 +73,16 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _audioSummaryError = MutableStateFlow<String?>(null)
     val audioSummaryError: StateFlow<String?> = _audioSummaryError.asStateFlow()
+
+    // Call Recordings State
+    private val _callRecordings = MutableStateFlow<List<CallRecordingsService.CallRecording>>(emptyList())
+    val callRecordings: StateFlow<List<CallRecordingsService.CallRecording>> = _callRecordings.asStateFlow()
+
+    private val _isLoadingCallRecordings = MutableStateFlow(false)
+    val isLoadingCallRecordings: StateFlow<Boolean> = _isLoadingCallRecordings.asStateFlow()
+
+    private val _callRecordingsError = MutableStateFlow<String?>(null)
+    val callRecordingsError: StateFlow<String?> = _callRecordingsError.asStateFlow()
 
     // Audio Recording State
     private val _isRecording = MutableStateFlow(false)
@@ -528,6 +541,90 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _audioSummaryText.value = ""
         _audioSummaryError.value = null
         _isProcessingAudioSummary.value = false
+    }
+
+    /**
+     * Fetch call recordings from the device.
+     */
+    fun fetchCallRecordings() {
+        Log.d("PdfViewModel", "🚀 fetchCallRecordings() called")
+        viewModelScope.launch {
+            Log.d("PdfViewModel", "🔄 Starting coroutine for fetchCallRecordings")
+            _isLoadingCallRecordings.value = true
+            _callRecordingsError.value = null
+            _callRecordings.value = emptyList()
+
+            try {
+                Log.d("PdfViewModel", "📞 Fetching call recordings...")
+
+                val recordings = callRecordingsService.fetchCallRecordings()
+                _callRecordings.value = recordings
+                Log.d("PdfViewModel", "✅ Found ${recordings.size} call recordings")
+                Log.d("PdfViewModel", "📊 Recordings: ${recordings.map { it.displayName ?: it.contactName ?: "Unknown" }}")
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "❌ Error fetching call recordings", e)
+                _callRecordingsError.value = "Failed to fetch call recordings: ${e.message}"
+            } finally {
+                _isLoadingCallRecordings.value = false
+                Log.d("PdfViewModel", "🏁 fetchCallRecordings completed")
+            }
+        }
+    }
+
+    /**
+     * Process a call recording for summary generation.
+     * 
+     * @param recording The call recording to process
+     * @param language The language for summary generation
+     */
+    fun processCallRecording(recording: CallRecordingsService.CallRecording, language: String) {
+        viewModelScope.launch {
+            _isProcessingAudioSummary.value = true
+            _audioSummaryError.value = null
+            _audioSummaryText.value = ""
+
+            try {
+                Log.d("PdfViewModel", "📞 Processing call recording: ${recording.contactName ?: recording.phoneNumber}")
+                
+                val file = File(recording.filePath ?: "")
+                if (!file.exists()) {
+                    _audioSummaryError.value = "Recording file not found. It may have been deleted."
+                    return@launch
+                }
+
+                val audioData = file.readBytes()
+                val fileName = file.name
+
+                // Extract text from audio
+                val extractedText = repository.extractTextFromAudio(fileName, audioData)
+                Log.d("PdfViewModel", "📝 Extracted text length: ${extractedText.length}")
+
+                if (extractedText.isNotEmpty()) {
+                    // Generate AI summary from the extracted text with selected language
+                    val summary = firebaseAiService.generateSummaryFromText(extractedText, language)
+                    Log.d("PdfViewModel", "✅ Call recording summary generated successfully in $language")
+                    _audioSummaryText.value = summary
+                } else {
+                    Log.w("PdfViewModel", "⚠️ No text extracted from call recording")
+                    _audioSummaryError.value = "Could not extract text from the call recording. The audio may be corrupted or in an unsupported format."
+                }
+
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "❌ Error processing call recording", e)
+                _audioSummaryError.value = "Failed to process call recording: ${e.message}"
+            } finally {
+                _isProcessingAudioSummary.value = false
+            }
+        }
+    }
+
+    /**
+     * Clear call recordings data.
+     */
+    fun clearCallRecordingsData() {
+        _callRecordings.value = emptyList()
+        _callRecordingsError.value = null
+        _isLoadingCallRecordings.value = false
     }
 
     /**
